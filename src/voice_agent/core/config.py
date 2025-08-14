@@ -10,12 +10,25 @@ from pydantic import BaseModel, Field
 
 
 class AudioConfig(BaseModel):
-    """Audio configuration settings."""
+    """Audio configuration settings.
+
+    Added VAD / speech detection tuning:
+    - vad_aggressiveness: WebRTC VAD mode (0=least, 3=most aggressive)
+    - min_speech_frames: Consecutive (or accumulated) speech frames before confirming speech
+    - max_silence_frames: Silence frames after speech to consider utterance ended
+    - speech_detection_cooldown: Cooldown (s) after TTS playback before listening resumes
+    """
 
     input_device: Optional[int] = None
     output_device: Optional[int] = None
     sample_rate: int = 16000
     chunk_size: int = 1024
+
+    # VAD / speech detection parameters
+    vad_aggressiveness: int = 1
+    min_speech_frames: int = 5
+    max_silence_frames: int = 50
+    speech_detection_cooldown: float = 1.0
 
 
 class STTConfig(BaseModel):
@@ -27,11 +40,31 @@ class STTConfig(BaseModel):
 
 
 class TTSConfig(BaseModel):
-    """Text-to-Speech configuration settings."""
+    """Text-to-Speech configuration settings.
+
+    Added latency tuning parameters (for Bark and other backends):
+    - tts_cooldown_margin: Extra safety margin (seconds) after playback (used for future fine-grained control)
+    - post_tts_cooldown: Short cooldown replacing large fixed sleeps (was 2.0s)
+    - enable_tts_buffer_double_clear: Optional second input buffer flush
+
+    Bark voice control:
+    - bark_voice_preset: Stable speaker identity (maps to Bark history prompt / preset).
+      Examples (depending on installed Bark version/presets):
+        "v2/en_speaker_1", "v2/en_speaker_6", "v2/en_speaker_9"
+      Leave None to allow Bark's default/random behavior.
+    """
 
     engine: str = "coqui"
     voice: str = "default"
     speed: float = 1.0
+
+    # New tuning / latency controls
+    tts_cooldown_margin: float = 0.25
+    post_tts_cooldown: float = 0.3
+    enable_tts_buffer_double_clear: bool = False
+
+    # Bark-specific deterministic voice preset (history prompt). None = default/random.
+    bark_voice_preset: Optional[str] = None
 
 
 class LLMConfig(BaseModel):

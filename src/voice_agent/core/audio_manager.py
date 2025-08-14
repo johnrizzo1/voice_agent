@@ -61,9 +61,14 @@ class AudioManager:
             self.pyaudio = pyaudio.PyAudio()
             self.logger.info("PyAudio initialized")
 
-            # Initialize VAD with lower aggressiveness for better sensitivity
-            self.vad = webrtcvad.Vad(1)  # Aggressiveness level 1 (less aggressive)
-            self.logger.info("WebRTC VAD initialized with aggressiveness level 1")
+            # Initialize VAD with configured aggressiveness
+            vad_level = getattr(self.config, "vad_aggressiveness", 1)
+            try:
+                self.vad = webrtcvad.Vad(int(vad_level))
+            except Exception:
+                self.logger.warning(f"Invalid vad_aggressiveness={vad_level}, falling back to 1")
+                self.vad = webrtcvad.Vad(1)
+            self.logger.info(f"WebRTC VAD initialized with aggressiveness level {vad_level}")
 
             # Setup input stream
             if self.config.input_device is not None or self._has_input_device():
@@ -191,14 +196,15 @@ class AudioManager:
         return audio_array
 
     async def _wait_for_speech(self) -> None:
-        """Wait for speech activity using VAD."""
-        speech_frames = 0
-        silence_frames = 0
-        min_speech_frames = 5  # Increased minimum frames to avoid false positives
-        max_silence_frames = 50  # Increased silence tolerance
+        """Wait for speech activity using VAD with stricter start criteria to avoid false triggers (e.g. keyboard clicks)."""
+        speech_frames = 0          # Count of speech-classified frames (not yet confirmed start)
+        silence_frames = 0         # Count of silence frames after speech start
+        speech_started = False     # Becomes True only after min_speech_frames consecutive (or near-consecutive) speech frames
 
-        # Wait for initial speech detection
-        speech_detected = False
+        # Pull configurable thresholds with safe defaults
+        min_speech_frames = getattr(self.config, "min_speech_frames", 5)
+        max_silence_frames = getattr(self.config, "max_silence_frames", 50)
+        cooldown = getattr(self.config, "speech_detection_cooldown", 1.0)
 
         while self.is_recording:
             # Skip processing if we're currently speaking (TTS output)
@@ -208,8 +214,7 @@ class AudioManager:
 
             # Implement cooldown period after TTS ends
             import time
-
-            if time.time() - self.last_speech_end_time < 3.0:  # 3-second cooldown
+            if time.time() - self.last_speech_end_time < cooldown:
                 await asyncio.sleep(0.1)
                 continue
 
@@ -223,38 +228,51 @@ class AudioManager:
                 if is_speech:
                     speech_frames += 1
                     silence_frames = 0
-                    speech_detected = True
-                    self.logger.debug(f"Speech detected (frames: {speech_frames})")
-                else:
-                    silence_frames += 1
-                    if speech_detected:
+                    # Only declare speech started after enough consecutive frames
+                    if not speech_started and speech_frames >= min_speech_frames:
+                        speech_started = True
                         self.logger.debug(
-                            f"Silence detected (frames: {silence_frames})"
+                            f"Speech start confirmed after {speech_frames} frames"
                         )
+                    elif speech_started:
+                        # Ongoing speech (optional detailed logging can be throttled)
+                        self.logger.debug(
+                            f"Ongoing speech (speech_frames={speech_frames})"
+                        )
+                else:
+                    if speech_started:
+                        silence_frames += 1
+                        # Log only occasional silence frames to reduce spam
+                        if silence_frames in (1, max_silence_frames // 2):
+                            self.logger.debug(
+                                f"Silence after speech (silence_frames={silence_frames})"
+                            )
+                    else:
+                        # Reset tentative speech counter if we haven't confirmed start
+                        speech_frames = 0
 
-                # Stop if we have enough speech followed by silence
-                if (
-                    speech_detected
-                    and speech_frames >= min_speech_frames
-                    and silence_frames >= max_silence_frames
-                ):
+                # Stop when confirmed speech has ended with required trailing silence
+                if speech_started and silence_frames >= max_silence_frames:
                     self.logger.info(
-                        f"Speech complete: {speech_frames} speech frames, {silence_frames} silence frames"
+                        f"Speech complete: {speech_frames} speech frames, {silence_frames} trailing silence frames"
                     )
                     break
 
-                # Also stop if we've been recording for too long without speech
+                # Timeout: no confirmed speech after buffer grows large
                 if (
-                    not speech_detected and len(self.input_buffer) > 480
+                    not speech_started
+                    and len(self.input_buffer) > 480
                 ):  # ~5 seconds at 16kHz (increased timeout)
-                    self.logger.warning("No speech detected, stopping recording")
+                    self.logger.debug(
+                        "No confirmed speech detected within timeout window"
+                    )
                     break
 
             await asyncio.sleep(0.01)  # Small delay to prevent busy waiting
 
     def _is_speech(self, frame: bytes) -> bool:
         """
-        Check if audio frame contains speech using VAD.
+        Check if audio frame contains speech using VAD plus simple energy gate.
 
         Args:
             frame: Audio frame bytes
@@ -263,20 +281,33 @@ class AudioManager:
             True if speech is detected
         """
         try:
+            # If VAD not initialized, conservatively return False (avoid false positives)
+            if self.vad is None:
+                return False
+
             # VAD expects specific frame sizes (10, 20, or 30 ms)
-            # Calculate frame size for 20ms at current sample rate
             frame_size_20ms = int(self.config.sample_rate * 0.02)
+            if len(frame) < frame_size_20ms * 2:  # Need enough samples (2 bytes per int16)
+                return False
 
-            if len(frame) >= frame_size_20ms * 2:  # 2 bytes per sample (16-bit)
-                frame_20ms = frame[: frame_size_20ms * 2]
-                return self.vad.is_speech(frame_20ms, self.config.sample_rate)
+            frame_20ms = frame[: frame_size_20ms * 2]
 
-            return False
+            # Simple amplitude (energy) gate to filter out very quiet clicks
+            # Convert to int16 numpy array
+            samples = np.frombuffer(frame_20ms, dtype=np.int16)
+            # Root mean square amplitude
+            rms = np.sqrt(np.mean(samples.astype(np.float32) ** 2))
+            # Threshold (empirical): ignore frames with rms below ~250 (very quiet)
+            if rms < 250:
+                return False
+
+            return self.vad.is_speech(frame_20ms, self.config.sample_rate)
         except Exception as e:
             self.logger.debug(f"VAD error: {e}")
-            return True  # Assume speech if VAD fails
+            # Previous behavior returned True (treat errors as speech); for noise suppression we choose False
+            return False
 
-    async def play_audio(self, audio_data: np.ndarray, sample_rate: int = None) -> None:
+    async def play_audio(self, audio_data: np.ndarray, sample_rate: Optional[int] = None) -> None:
         """
         Play audio data through the output stream.
 
@@ -299,7 +330,9 @@ class AudioManager:
             processed_audio = audio_data
             if sample_rate and sample_rate != self.config.sample_rate:
                 self.logger.debug(
-                    f"Resampling audio from {sample_rate}Hz to {self.config.sample_rate}Hz"
+                    "Resampling audio from %dHz to %dHz",
+                    sample_rate,
+                    self.config.sample_rate,
                 )
                 # Simple resampling by duplicating/dropping samples
                 ratio = self.config.sample_rate / sample_rate
@@ -329,6 +362,9 @@ class AudioManager:
         finally:
             # Clear speaking flag to re-enable input
             self.is_speaking = False
+            # Record end time for cooldown logic and re-enable input
+            import time
+            self.last_speech_end_time = time.time()
             # Clear any residual audio that might have been captured during playback
             self.clear_input_buffer()
             self.logger.debug("Audio playback finished - input re-enabled")
@@ -405,32 +441,52 @@ class AudioManager:
         if not self.pyaudio:
             return {}
 
+        # Safely obtain default device info (PyAudio may raise if unavailable)
+        try:
+            default_input = self.pyaudio.get_default_input_device_info()
+        except Exception:
+            default_input = None
+        try:
+            default_output = self.pyaudio.get_default_output_device_info()
+        except Exception:
+            default_output = None
+
         devices = {
             "input_devices": [],
             "output_devices": [],
-            "default_input": self.pyaudio.get_default_input_device_info(),
-            "default_output": self.pyaudio.get_default_output_device_info(),
+            "default_input": default_input,
+            "default_output": default_output,
         }
 
         device_count = self.pyaudio.get_device_count()
         for i in range(device_count):
             device_info = self.pyaudio.get_device_info_by_index(i)
 
-            if device_info["maxInputChannels"] > 0:
+            # Some backends may return numeric fields as float or string; normalize
+            try:
+                max_input = int(float(device_info.get("maxInputChannels", 0) or 0))
+            except (ValueError, TypeError):
+                max_input = 0
+            try:
+                max_output = int(float(device_info.get("maxOutputChannels", 0) or 0))
+            except (ValueError, TypeError):
+                max_output = 0
+
+            if max_input > 0:
                 devices["input_devices"].append(
                     {
                         "index": i,
-                        "name": device_info["name"],
-                        "channels": device_info["maxInputChannels"],
+                        "name": device_info.get("name", f"Input {i}"),
+                        "channels": max_input,
                     }
                 )
 
-            if device_info["maxOutputChannels"] > 0:
+            if max_output > 0:
                 devices["output_devices"].append(
                     {
                         "index": i,
-                        "name": device_info["name"],
-                        "channels": device_info["maxOutputChannels"],
+                        "name": device_info.get("name", f"Output {i}"),
+                        "channels": max_output,
                     }
                 )
 

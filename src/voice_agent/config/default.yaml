@@ -4,6 +4,12 @@ audio:
   output_device: null # Auto-detect
   sample_rate: 16000
   chunk_size: 1024
+
+  # VAD / speech detection tuning (adjusted for reduced sensitivity to brief transients like keyboard clicks)
+  vad_aggressiveness: 3          # 0-3 (higher = more aggressive filtering of noise)
+  min_speech_frames: 8           # Require more consecutive speech frames to confirm start
+  max_silence_frames: 30         # Shorter trailing silence to finish sooner after real speech
+  speech_detection_cooldown: 1.0 # Seconds after TTS before listening resumes
   
 stt:
   model: "whisper-base"
@@ -11,9 +17,24 @@ stt:
   streaming: true
   
 tts:
-  engine: "bark"  # Using Bark for high-quality neural TTS
+  # Select TTS engine: "bark" | "coqui" | "espeak" | "pyttsx3" | "auto"
+  engine: "bark"   # Switched to Bark for testing neural TTS performance/latency
   voice: "default"
   speed: 1.0
+
+  # Bark-specific (ignored by other engines):
+  # Set a deterministic Bark voice preset (history prompt) to avoid random changes.
+  # Examples (may vary by Bark release): v2/en_speaker_1, v2/en_speaker_6, v2/en_speaker_9
+  bark_voice_preset: v2/en_speaker_1  # Set to e.g. "v2/en_speaker_6" when using engine: bark
+
+  # Latency tuning (applies primarily to Bark; harmless for others):
+  post_tts_cooldown: 0.3                # Short cooldown after playback (was 2.0s before optimization)
+  tts_cooldown_margin: 0.25             # Reserved for future fine‑grained pacing adjustments
+  enable_tts_buffer_double_clear: false # Set true only if you experience residual mic feedback
+# tts:
+#   engine: "bark"  # Using Bark for high-quality neural TTS
+#   voice: "default"
+#   speed: 1.0
   
 llm:
   provider: "ollama"

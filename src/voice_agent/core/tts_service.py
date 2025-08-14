@@ -360,7 +360,13 @@ class TTSService:
 
             self.logger.debug("Generating speech with Bark TTS...")
 
-            audio_array = await loop.run_in_executor(None, lambda: generate_audio(text))
+            # Use configured Bark voice preset (history prompt) if provided for deterministic voice
+            if getattr(self.config, "bark_voice_preset", None):
+                audio_array = await loop.run_in_executor(
+                    None, lambda: generate_audio(text, history_prompt=self.config.bark_voice_preset)
+                )
+            else:
+                audio_array = await loop.run_in_executor(None, lambda: generate_audio(text))
 
             # Bark returns float32 in range [-1.0, 1.0]; Python's wave module (used in _load_audio_file)
             # only supports PCM (format code 1) and rejects IEEE float WAV (format code 3), which caused:
@@ -414,23 +420,24 @@ class TTSService:
                 # Clean up
                 temp_file.unlink()
 
-            # Add delay for natural speech timing (Bark audio length varies)
-            word_count = len(text.split())
-            estimated_duration = max(
-                3.0, word_count / 2.0
-            )  # Neural TTS tends to be slower and more expressive
-            await asyncio.sleep(estimated_duration)
+            # Adaptive minimal pacing pause instead of large heuristic delay.
+            # We already know actual audio length; we only need to yield briefly
+            # to let playback buffer drain before re‑enabling input.
+            actual_duration = max(0.0, len(audio_pcm16) / SAMPLE_RATE)
+            pacing_pause = min(actual_duration * 0.10, 0.75)  # 10% of length, capped at 750ms
+            await asyncio.sleep(pacing_pause)
 
         except Exception as e:
             self.logger.error(f"Bark TTS synthesis error: {e}")
         finally:
-            # Add longer delay before re-enabling audio input
-            await asyncio.sleep(2.0)
+            # Configurable short cooldown (replaces fixed 2.0s sleep)
+            await asyncio.sleep(self.config.post_tts_cooldown)
 
             if self.audio_manager:
                 self.audio_manager.clear_input_buffer()
-                await asyncio.sleep(0.5)
-                self.audio_manager.clear_input_buffer()
+                if self.config.enable_tts_buffer_double_clear:
+                    await asyncio.sleep(0.12)
+                    self.audio_manager.clear_input_buffer()
                 self.audio_manager.set_speaking_state(False)
                 self.logger.debug(
                     "Speaking state cleared - audio input re-enabled after Bark TTS"
@@ -736,7 +743,12 @@ class TTSService:
             # Generate audio in separate thread
             loop = asyncio.get_event_loop()
 
-            audio_array = await loop.run_in_executor(None, lambda: generate_audio(text))
+            if getattr(self.config, "bark_voice_preset", None):
+                audio_array = await loop.run_in_executor(
+                    None, lambda: generate_audio(text, history_prompt=self.config.bark_voice_preset)
+                )
+            else:
+                audio_array = await loop.run_in_executor(None, lambda: generate_audio(text))
 
             # Convert to numpy array with correct format
             # Bark returns float32, but we need int16 for compatibility
