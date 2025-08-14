@@ -1,0 +1,38 @@
+# Default configuration for Voice Agent
+audio:
+  input_device: null  # Auto-detect
+  output_device: null # Auto-detect
+  sample_rate: 16000
+  chunk_size: 1024
+  
+stt:
+  model: "whisper-base"
+  language: "auto"
+  streaming: true
+  
+tts:
+  engine: "bark"  # Using Bark for high-quality neural TTS
+  voice: "default"
+  speed: 1.0
+  
+llm:
+  provider: "ollama"
+  model: "mistral:7b"
+  temperature: 0.7
+  max_tokens: 2048
+  
+tools:
+  enabled:
+    - calculator
+    - weather
+    - file_ops
+  disabled: []
+
+conversation:
+  max_history: 50
+  context_window: 4096
+  interrupt_enabled: true
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

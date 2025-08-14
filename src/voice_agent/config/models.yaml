@@ -1,0 +1,69 @@
+# Model configurations for Voice Agent
+
+stt_models:
+  whisper:
+    base:
+      model_name: "whisper-base"
+      download_url: "https://huggingface.co/openai/whisper-base"
+      size_mb: 142
+      languages: "multilingual"
+    small:
+      model_name: "whisper-small"
+      download_url: "https://huggingface.co/openai/whisper-small"
+      size_mb: 244
+      languages: "multilingual"
+    medium:
+      model_name: "whisper-medium"
+      download_url: "https://huggingface.co/openai/whisper-medium"
+      size_mb: 769
+      languages: "multilingual"
+  
+  vosk:
+    en-us-small:
+      model_name: "vosk-model-en-us-0.22"
+      download_url: "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22.zip"
+      size_mb: 42
+      languages: "en"
+
+tts_models:
+  coqui:
+    ljspeech:
+      model_name: "tts_models/en/ljspeech/tacotron2-DDC"
+      quality: "high"
+      voice_type: "female"
+    vctk:
+      model_name: "tts_models/en/vctk/vits"
+      quality: "high"
+      voice_type: "multi-speaker"
+  
+  pyttsx3:
+    default:
+      engine: "sapi5"  # Windows
+      voice_id: 0
+    espeak:
+      engine: "espeak"  # Linux
+      voice: "en"
+
+llm_models:
+  ollama:
+    mistral:
+      model_name: "mistral:7b"
+      size_gb: 4.1
+      context_length: 8192
+      capabilities: ["chat", "tools"]
+    llama2:
+      model_name: "llama2:7b"
+      size_gb: 3.8
+      context_length: 4096
+      capabilities: ["chat"]
+    codellama:
+      model_name: "codellama:7b"
+      size_gb: 3.8
+      context_length: 16384
+      capabilities: ["chat", "code"]
+
+model_paths:
+  cache_dir: "~/.cache/voice_agent/models"
+  whisper_cache: "~/.cache/whisper"
+  tts_cache: "~/.cache/tts"
+  ollama_models: "~/.ollama/models"

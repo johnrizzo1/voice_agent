@@ -1,0 +1,4 @@
+[flake8]
+# Project lint configuration: ignore line length (E501) while keeping all other default checks
+extend-ignore = E501
+max-line-length = 120
