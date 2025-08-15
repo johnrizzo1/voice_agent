@@ -17,7 +17,7 @@ stt_models:
       download_url: "https://huggingface.co/openai/whisper-medium"
       size_mb: 769
       languages: "multilingual"
-  
+
   vosk:
     en-us-small:
       model_name: "vosk-model-en-us-0.22"
@@ -35,13 +35,13 @@ tts_models:
       model_name: "tts_models/en/vctk/vits"
       quality: "high"
       voice_type: "multi-speaker"
-  
+
   pyttsx3:
     default:
-      engine: "sapi5"  # Windows
+      engine: "sapi5" # Windows
       voice_id: 0
     espeak:
-      engine: "espeak"  # Linux
+      engine: "espeak" # Linux
       voice: "en"
 
 llm_models:
@@ -52,7 +52,7 @@ llm_models:
       context_length: 8192
       capabilities: ["chat", "tools"]
     llama2:
-      model_name: "llama2:7b"
+      model_name: "llama3.2:3b"
       size_gb: 3.8
       context_length: 4096
       capabilities: ["chat"]

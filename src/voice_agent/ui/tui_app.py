@@ -236,15 +236,20 @@ class StatusBar(Static):
                 rendered_label = f"{label}{frame}"
             return f"[{color}]{rendered_label}={state.value}[/]"
 
-        parts = [
+        # Base parts (excluding meter so we can right-align meter)
+        base_parts = [
             fmt("🎤in", status.audio_input),
             fmt("🧠stt", status.stt),
             fmt("💭llm", status.llm),
             fmt("🗣️tts", status.tts),
             fmt("🔊out", status.audio_output),
         ]
+        if status.current_message:
+            base_parts.append(f"[cyan]{status.current_message}[/]")
+        if status.error_message:
+            base_parts.append(f"[red]ERR:{status.error_message}[/]")
 
-        # Audio level meter (if audio pipeline enabled)
+        # Audio level meter
         try:
             level = float(self._get_audio_level())
         except Exception:
@@ -253,12 +258,30 @@ class StatusBar(Static):
         bar_width = 12
         filled = int(level * bar_width + 0.5)
         bar = "█" * filled + "░" * (bar_width - filled)
-        parts.append(f"[blue]{bar}[/]{int(level*100):3d}%")
-        if status.current_message:
-            parts.append(f"[cyan]{status.current_message}[/]")
-        if status.error_message:
-            parts.append(f"[red]ERR:{status.error_message}[/]")
-        return " | ".join(parts)
+        meter_text = f"[blue]{bar}[/]{int(level*100):3d}%"
+
+        # Join left side
+        left = " | ".join(base_parts)
+
+        # Attempt right justification within available width
+        try:
+            total_width = getattr(self.size, "width", 0) or 0
+        except Exception:
+            total_width = 0
+
+        if total_width > 0:
+            # Rough visible length estimation (strip simple markup [.*?])
+            import re
+
+            visible_left = re.sub(r"\[[^\]]+\]", "", left)
+            visible_meter = re.sub(r"\[[^\]]+\]", "", meter_text)
+            padding = total_width - len(visible_left) - len(visible_meter) - 1
+            if padding < 1:
+                padding = 1
+            return f"{left}{' ' * padding}{meter_text}"
+        else:
+            # Fallback (no width known) -> append meter at end
+            return f"{left} | {meter_text}"
 
 
 class ChatLog(ScrollView):
@@ -706,6 +729,9 @@ class VoiceAgentTUI(App):
 
         # Dictation mode state
         self._dictation_mode_active: bool = False
+        self._dictation_paused: bool = (
+            False  # New: paused (retain accumulated segments, no capture loop)
+        )
         self._dictation_task: Optional[asyncio.Task] = None
         self._dictation_segments: List[str] = []
         self._dictation_preview_msg: Optional[ChatMessage] = None
@@ -1355,15 +1381,228 @@ class VoiceAgentTUI(App):
         self.chat.add_message(ChatMessage(role="system", content="(Logs cleared)"))
         self._refresh_debug_panel()
 
+    # ---------------------- Voice Command Helpers ----------------------
+    @staticmethod
+    def detect_voice_command(text: str) -> Optional[str]:
+        """
+        Lightweight pattern matcher for spoken control phrases.
+        Returns a normalized command key or None.
+
+        Commands implemented (synonym sets):
+          - start_dictation:  "start dictation", "take a dictation", "begin dictation",
+                              "start recording", "start taking notes"
+          - end_dictation:    "end dictation", "stop dictation", "finish dictation",
+                              "send dictation", "dictation done"
+          - pause_dictation:  "pause dictation", "hold dictation"
+          - resume_dictation: "resume dictation", "continue dictation", "unpause dictation"
+          - cancel_dictation: "cancel dictation", "discard dictation", "abort dictation"
+        """
+        if not text:
+            return None
+        norm = text.strip().lower()
+        # Remove trivial punctuation
+        for ch in [".", "!", "?"]:
+            norm = norm.replace(ch, "")
+
+        def in_any(candidates: List[str]) -> bool:
+            return any(norm == c or norm.endswith(c) for c in candidates)
+
+        if in_any(
+            [
+                "start dictation",
+                "take a dictation",
+                "begin dictation",
+                "start recording",
+                "start taking notes",
+            ]
+        ):
+            return "start_dictation"
+        if in_any(
+            [
+                "end dictation",
+                "stop dictation",
+                "finish dictation",
+                "send dictation",
+                "dictation done",
+            ]
+        ):
+            return "end_dictation"
+        if in_any(
+            [
+                "pause dictation",
+                "hold dictation",
+            ]
+        ):
+            return "pause_dictation"
+        if in_any(
+            [
+                "resume dictation",
+                "continue dictation",
+                "unpause dictation",
+            ]
+        ):
+            return "resume_dictation"
+        if in_any(
+            [
+                "cancel dictation",
+                "discard dictation",
+                "abort dictation",
+            ]
+        ):
+            return "cancel_dictation"
+        return None
+
+    async def handle_voice_command(self, command: str) -> bool:
+        """
+        Execute a detected voice command.
+        Returns True if a command was handled (and default processing should stop).
+        """
+        try:
+            if command == "start_dictation":
+                if self._dictation_mode_active and not self._dictation_paused:
+                    self.chat.add_message(
+                        ChatMessage(role="system", content="(Dictation already active)")
+                    )
+                    return True
+                if self._dictation_mode_active and self._dictation_paused:
+                    # Resume path
+                    await self._resume_dictation()
+                    return True
+                # Fresh start
+                self._start_dictation()
+                self.chat.add_message(
+                    ChatMessage(
+                        role="system",
+                        content="(Dictation mode started via voice command – speak freely, say 'End dictation' when finished)",
+                    )
+                )
+                if self.settings_panel and self.settings_panel.display:  # type: ignore
+                    self.settings_panel.update(self._settings_text())  # type: ignore
+                return True
+            elif command == "resume_dictation":
+                if not self._dictation_mode_active:
+                    self.chat.add_message(
+                        ChatMessage(
+                            role="system", content="(No dictation session to resume)"
+                        )
+                    )
+                    return True
+                if not self._dictation_paused:
+                    self.chat.add_message(
+                        ChatMessage(role="system", content="(Dictation not paused)")
+                    )
+                    return True
+                await self._resume_dictation()
+                return True
+            elif command == "pause_dictation":
+                if not self._dictation_mode_active:
+                    self.chat.add_message(
+                        ChatMessage(
+                            role="system", content="(No active dictation to pause)"
+                        )
+                    )
+                    return True
+                if self._dictation_paused:
+                    self.chat.add_message(
+                        ChatMessage(role="system", content="(Dictation already paused)")
+                    )
+                    return True
+                await self._pause_dictation()
+                return True
+            elif command == "end_dictation":
+                if not self._dictation_mode_active:
+                    self.chat.add_message(
+                        ChatMessage(
+                            role="system", content="(No active dictation to end)"
+                        )
+                    )
+                    return True
+                await self._stop_dictation(finalize=True)
+                return True
+            elif command == "cancel_dictation":
+                if not self._dictation_mode_active:
+                    self.chat.add_message(
+                        ChatMessage(
+                            role="system", content="(No active dictation to cancel)"
+                        )
+                    )
+                    return True
+                await self._stop_dictation(finalize=False)
+                return True
+        except Exception as e:
+            self.chat.add_message(
+                ChatMessage(
+                    role="system", content=f"(Voice command error: {e})", status="error"
+                )
+            )
+            return True
+        return False
+
     # ---------------------- Dictation Helpers ----------------------
     def _start_dictation(self) -> None:
         if self._dictation_mode_active:
             return
         self._dictation_mode_active = True
+        self._dictation_paused = False
         self._dictation_segments = []
-        self._dictation_preview_msg = ChatMessage(role="user", content="(dictating...)")
+        self._dictation_preview_msg = ChatMessage(
+            role="user", content="(dictating...) █"
+        )
         self.chat.add_message(self._dictation_preview_msg)
         self._dictation_task = asyncio.create_task(self._dictation_loop())
+
+    async def _pause_dictation(self) -> None:
+        if not self._dictation_mode_active or self._dictation_paused:
+            return
+        self._dictation_paused = True
+        # Cancel loop
+        if self._dictation_task:
+            self._dictation_task.cancel()
+            try:
+                await self._dictation_task
+            except Exception:
+                pass
+            self._dictation_task = None
+        # Remove cursor block
+        if (
+            self._dictation_preview_msg
+            and self._dictation_preview_msg.content.endswith(" █")
+        ):
+            self._dictation_preview_msg.content = self._dictation_preview_msg.content[
+                :-2
+            ]
+            self.chat.refresh(layout=True)
+        self.chat.add_message(
+            ChatMessage(
+                role="system",
+                content="(Dictation paused – say 'Resume dictation' to continue, 'End dictation' to finalize, or 'Cancel dictation' to discard)",
+            )
+        )
+        if self.settings_panel and self.settings_panel.display:  # type: ignore
+            self.settings_panel.update(self._settings_text())  # type: ignore
+
+    async def _resume_dictation(self) -> None:
+        if not self._dictation_mode_active or not self._dictation_paused:
+            return
+        self._dictation_paused = False
+        # Reinstate cursor indicator
+        if (
+            self._dictation_preview_msg
+            and not self._dictation_preview_msg.content.endswith(" █")
+        ):
+            self._dictation_preview_msg.content = (
+                self._dictation_preview_msg.content + " █"
+            )
+            self.chat.refresh(layout=True)
+        self._dictation_task = asyncio.create_task(self._dictation_loop())
+        self.chat.add_message(
+            ChatMessage(
+                role="system",
+                content="(Dictation resumed – continue speaking, say 'Pause dictation' to pause again)",
+            )
+        )
+        if self.settings_panel and self.settings_panel.display:  # type: ignore
+            self.settings_panel.update(self._settings_text())  # type: ignore
 
     async def _stop_dictation(self, finalize: bool) -> None:
         """
@@ -1404,10 +1643,10 @@ class VoiceAgentTUI(App):
 
         if self._dictation_preview_msg:
             if finalize and final_text:
-                # Commit final aggregated content and launch LLM processing.
+                # Commit final aggregated content BUT DO NOT send to LLM (per requirement).
+                # User transcript remains in chat; no agent response is expected.
                 self._dictation_preview_msg.content = final_text
                 self.chat.refresh(layout=True)
-                asyncio.create_task(self._agent_adapter.handle_user_text(final_text))  # type: ignore
             else:
                 # Treat empty (or canceled) dictation as a system notice.
                 if not final_text:
@@ -1420,7 +1659,11 @@ class VoiceAgentTUI(App):
         self.chat.add_message(
             ChatMessage(
                 role="system",
-                content="(Dictation finished)" if finalize else "(Dictation canceled)",
+                content=(
+                    "(Dictation finished – transcript not sent to agent)"
+                    if finalize
+                    else "(Dictation canceled)"
+                ),
             )
         )
 
@@ -1449,10 +1692,27 @@ class VoiceAgentTUI(App):
                 text = text.strip()
                 if not text:
                     continue
+
+                # In-dictation voice command handling (pause / resume / end / cancel)
+                cmd = self.detect_voice_command(text)
+                if cmd == "pause_dictation":
+                    await self._pause_dictation()
+                    continue
+                if cmd == "end_dictation":
+                    await self._stop_dictation(finalize=True)
+                    continue
+                if cmd == "cancel_dictation":
+                    await self._stop_dictation(finalize=False)
+                    continue
+                if cmd in ("start_dictation", "resume_dictation"):
+                    # Redundant inside active (non-paused) session
+                    continue
+
                 self._dictation_segments.append(text)
                 if self._dictation_preview_msg:
                     joined = " ".join(self._dictation_segments)
-                    self._dictation_preview_msg.content = joined + " █"
+                    suffix = " █" if not self._dictation_paused else ""
+                    self._dictation_preview_msg.content = joined + suffix
                     self.chat.refresh(layout=True)
             except asyncio.CancelledError:
                 break
@@ -1687,11 +1947,32 @@ class AgentAdapter:
             t_stt = time.monotonic()
             text = await va.stt_service.transcribe(audio)  # type: ignore
             self._record_metric("stt", (time.monotonic() - t_stt) * 1000.0)
-            if not text.strip():
+            text = text.strip()
+            if not text:
                 await self._agent_queue.put(
                     ChatMessage(role="system", content="(Empty transcription)")
                 )
                 return
+
+            # Attempt voice command interception (outside dictation mode)
+            try:
+                from textual.app import App as _App  # type: ignore
+
+                tui = _App.app  # type: ignore[attr-defined]
+            except Exception:
+                tui = None
+            if tui and hasattr(tui, "detect_voice_command"):
+                try:
+                    cmd = tui.detect_voice_command(text)  # type: ignore
+                except Exception:
+                    cmd = None
+                if cmd:
+                    try:
+                        handled = await tui.handle_voice_command(cmd)  # type: ignore
+                    except Exception:
+                        handled = False
+                    if handled:
+                        return  # Command consumed (e.g., started/ended dictation)
 
             await self._agent_queue.put(ChatMessage(role="user", content=text))
 

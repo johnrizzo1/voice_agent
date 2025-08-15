@@ -448,3 +448,58 @@ Follow-up:
 - Add tests: append > viewport messages, assert tail follow until manual scroll; after manual scroll ensure additional messages do not shift view; after bottom action tail follow resumes.
 
 ---
+
+## Decision
+
+2025-08-15 03:14:45 - **Voice Command Interpretation Layer for Dictation Control**
+
+## Rationale
+
+Need hands-free control of long-form speech input (dictation) without relying on keyboard function keys (F5/F6) so the user can verbally:
+
+- Start dictation
+- End / finalize dictation
+- Pause (currently treated same as end/finalize)
+- Cancel / discard dictation
+
+Key considerations:
+
+1. Low Latency / Offline: A lightweight local pattern match avoids LLM round-trip latency and preserves privacy (no cloud).
+2. Safety / False Positives: Limited to a constrained synonym set; matching requires full phrase or phrase suffix to reduce accidental triggers during normal conversation.
+3. Incremental Evolution: Simple rule-based layer now; can later be replaced or augmented with intent classification / small local model without changing higher-level TUI or pipeline code.
+4. Non-Intrusive: Implemented entirely in UI layer (TUI app + adapter) leaving core VoiceAgent pipeline untouched.
+
+## Implementation Details
+
+- Added static command detector [`VoiceAgentTUI.detect_voice_command()`](src/voice_agent/ui/tui_app.py:1381) returning normalized command keys:
+  - start_dictation
+  - end_dictation
+  - pause_dictation (alias of end for now)
+  - cancel_dictation
+- Integrated interception points:
+  - Push-to-talk one‑shot path inside [`AgentAdapter._do_capture()`](src/voice_agent/ui/tui_app.py:1793) before forwarding transcription to LLM.
+  - Continuous dictation loop modifications in [`VoiceAgentTUI._dictation_loop()`](src/voice_agent/ui/tui_app.py:1549) to recognize in-session control phrases.
+- Added executor method [`VoiceAgentTUI.handle_voice_command()`](src/voice_agent/ui/tui_app.py:1430) performing state transitions:
+  - start_dictation → initializes dictation mode if not already active
+  - end_dictation / pause_dictation → finalizes + sends aggregated text
+  - cancel_dictation → stops without sending (system notice)
+- Ensured settings panel refresh reflects new dictation state after voice-driven transitions.
+- Guarded against redundant "start dictation" while already active.
+- Command detection strips terminal punctuation and matches either exact string or suffix (norm.endswith()) to tolerate leading filler words.
+
+## Implications
+
+- Enables fully voice-driven long-form input cycles (hands off keyboard once audio pipeline active).
+- Establishes an abstraction seam for future richer intent handling (e.g., "pause recording for a moment", "discard that").
+- Minimal performance overhead (string operations only) and no additional dependencies.
+- Slight risk of inadvertent triggers if user naturally ends a sentence with an identical short control phrase; mitigated by requiring phrase boundary equality/suffix rather than substring.
+
+## Follow-up
+
+1. Distinguish pause vs finalize: Implement paused state preserving accumulated segments without sending (resume command).
+2. Add configurable hotword prefix (e.g., "computer, start dictation") to further reduce accidental triggers.
+3. Add telemetry / counters for command usage & false positive analysis (optional metrics panel enrichment).
+4. Write unit tests for detector: phrase variants, punctuation handling, negative cases.
+5. Internationalization: expose command phrase lists via configuration for localization.
+
+---

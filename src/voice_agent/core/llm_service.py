@@ -355,9 +355,16 @@ class LLMService:
             # Generate initial response
             response = await self._generate_simple(messages)
 
-            # Check (case-insensitive) if response contains tool calls
-            if "TOOL_CALL:" in response.upper():
+            # Check (case-insensitive) if response contains ANY *_CALL: pattern (e.g. TOOL_CALL:, WEATHER_CALL:)
+            import re as _re_check
+
+            if _re_check.search(r"[A-Z_]+_CALL:", response.upper()):
                 return await self._handle_tool_call(response, tool_executor)
+
+            # Fallback: attempt to interpret a bare function-style invocation like: weather(location="Paris") or file_ops(operation="exists", path="README.md")
+            direct = await self._try_direct_tool_invocation(response, tool_executor)
+            if direct is not None:
+                return direct
 
             return response
 
@@ -381,15 +388,76 @@ class LLMService:
 
         return "\n".join(tool_descriptions)
 
+    async def _try_direct_tool_invocation(
+        self, text: str, tool_executor: Any
+    ) -> Optional[str]:
+        """
+        Attempt to parse and execute a direct function style tool invocation without *_CALL: tag.
+
+        Examples accepted:
+          weather(location="London", units="F")
+          file_ops(operation="exists", path="README.md")
+        """
+        try:
+            import re as _re
+
+            stripped = text.strip()
+            # Heuristic: single line, looks like func(...)
+            if "\n" in stripped:
+                return None
+            m = _re.match(r"^([a-zA-Z_][a-zA-Z0-9_]*)\s*\((.*)\)\s*$", stripped)
+            if not m:
+                return None
+            tool_name = m.group(1).lower()
+            params_inside = m.group(2).strip()
+            parameters = self._parse_tool_parameters(params_inside)
+
+            exec_result = await tool_executor.execute_tool(tool_name, parameters)
+            if not exec_result.get("success"):
+                return f"The '{tool_name}' tool failed: {exec_result.get('error', 'unknown error')}"
+            result = exec_result.get("result")
+
+            # Reuse existing formatting logic by temporarily faking the structures
+            if tool_name == "weather":
+                return self._format_weather_response(
+                    result if isinstance(result, dict) else {"description": str(result)}
+                )
+            if isinstance(result, dict):
+                desc = result.get("description")
+                filtered = [(k, v) for k, v in result.items() if k != "description"][
+                    :12
+                ]
+                parts: List[str] = []
+                if desc:
+                    parts.append(desc)
+                if filtered:
+                    parts.append("; ".join(f"{k}={v}" for k, v in filtered))
+                return " ".join(parts) if parts else "Tool executed."
+            if isinstance(result, (list, tuple)):
+                if not result:
+                    return "No results."
+                preview = "; ".join(map(str, list(result)[:10]))
+                if len(result) > 10:
+                    preview += f"; ... (+{len(result)-10} more)"
+                return preview
+            return str(result)
+        except Exception:
+            return None
+
     async def _handle_tool_call(self, response: str, tool_executor: Any) -> str:
         """Handle tool calling (robust + case-insensitive) with enhanced visualization."""
         try:
             upper_resp = response.upper()
-            if "TOOL_CALL:" not in upper_resp:
-                return response
 
-            idx = upper_resp.index("TOOL_CALL:")
-            tool_call_part = response[idx + len("TOOL_CALL:") :].strip()
+            # Accept generic pattern e.g. TOOL_CALL:, WEATHER_CALL:, SEARCH_CALL:, etc.
+            import re as _re
+
+            m_tag = _re.search(r"([A-Z_]+)_CALL:", upper_resp)
+            if not m_tag:
+                return response
+            idx = m_tag.start()
+            tag_len = len(m_tag.group(0))
+            tool_call_part = response[idx + tag_len :].strip()
             tool_call_part = " ".join(tool_call_part.split())
 
             import re
@@ -419,68 +487,72 @@ class LLMService:
                 self.logger.error(
                     f"Tool execution exception for {tool_name}: {exec_err}"
                 )
-                return (
-                    f"🔧 Tool: {tool_name}\n"
-                    f"Status: error\n"
-                    f"Details: Unexpected execution exception."
-                )
+                return f"I tried to use the '{tool_name}' tool but it crashed unexpectedly."
 
             if not exec_result.get("success"):
                 err = exec_result.get("error", "unknown error")
-                return f"🔧 Tool: {tool_name}\n" f"Status: failed\n" f"Error: {err}"
+                return f"The '{tool_name}' tool failed: {err}"
 
             tool_result = exec_result.get("result")
 
+            # Specialized formatting (weather may wrap actual payload under 'result')
             if tool_name == "weather":
-                formatted = self._format_weather_response(tool_result)
-                return (
-                    f"🔧 Tool: weather\n"
-                    f"Parameters: {parameters or '{}'}\n"
-                    f"Result:\n{formatted}"
-                )
+                weather_payload = tool_result
+                if (
+                    isinstance(weather_payload, dict)
+                    and "result" in weather_payload
+                    and isinstance(weather_payload["result"], dict)
+                ):
+                    inner = weather_payload["result"]
+                    # Promote outer location / units if missing
+                    if "location" in weather_payload and "location" not in inner:
+                        inner["location"] = weather_payload["location"]
+                    if "units" in weather_payload and "temperature_unit" not in inner:
+                        units_val = weather_payload["units"].lower()
+                        if units_val.startswith("f"):
+                            inner["temperature_unit"] = "°F"
+                        elif units_val.startswith("c"):
+                            inner["temperature_unit"] = "°C"
+                    weather_payload = inner
+                return self._format_weather_response(weather_payload)
 
+            # Natural language formatting for dict results
             if isinstance(tool_result, dict):
                 description = tool_result.get("description")
-                kv_lines: List[str] = []
-                for k, v in list(tool_result.items())[:12]:
-                    if k == "description":
-                        continue
-                    kv_lines.append(f"  - {k}: {v}")
-                summary_block = (
-                    "\n".join(kv_lines) if kv_lines else "  (no additional fields)"
-                )
+                # Remove very verbose or internal keys if any in future
+                filtered_items = [
+                    (k, v) for k, v in tool_result.items() if k not in {"description"}
+                ][:12]
+
+                if description and not filtered_items:
+                    return description
+
+                parts: List[str] = []
                 if description:
-                    return (
-                        f"🔧 Tool: {tool_name}\n"
-                        f"Parameters: {parameters or '{}'}\n"
-                        f"Description: {description}\n"
-                        f"Fields:\n{summary_block}"
-                    )
+                    parts.append(description)
+
+                if filtered_items:
+                    summary_pairs = "; ".join(f"{k}={v}" for k, v in filtered_items)
+                    parts.append(summary_pairs)
+
                 return (
-                    f"🔧 Tool: {tool_name}\n"
-                    f"Parameters: {parameters or '{}'}\n"
-                    f"Fields:\n{summary_block}"
+                    " ".join(parts)
+                    if parts
+                    else "Tool completed with no additional details."
                 )
 
+            # Lists / tuples → concise enumeration (trim if long)
             if isinstance(tool_result, (list, tuple)):
+                if not tool_result:
+                    return "No results were returned."
                 preview_items = list(tool_result)[:10]
-                rendered_list = (
-                    "\n".join(f"  - {item}" for item in preview_items) or "  (empty)"
-                )
-                more = ""
+                rendered = "; ".join(str(item) for item in preview_items)
                 if len(tool_result) > 10:
-                    more = f"\n  ... ({len(tool_result) - 10} more)"
-                return (
-                    f"🔧 Tool: {tool_name}\n"
-                    f"Parameters: {parameters or '{}'}\n"
-                    f"Items:\n{rendered_list}{more}"
-                )
+                    rendered += f"; ... (+{len(tool_result) - 10} more)"
+                return rendered
 
-            return (
-                f"🔧 Tool: {tool_name}\n"
-                f"Parameters: {parameters or '{}'}\n"
-                f"Result: {tool_result}"
-            )
+            # Fallback to string conversion
+            return str(tool_result)
 
         except Exception as e:
             self.logger.error(f"Tool call handling error: {e}")
