@@ -50,7 +50,12 @@ def _locate_default_config() -> Path:
     is_flag=True,
     help="Disable audio input/output (text-only mode)",
 )
-def main(config: str | None, debug: bool, no_audio: bool):
+@click.option(
+    "--tui",
+    is_flag=True,
+    help="Launch experimental Text User Interface (text-only interaction).",
+)
+def main(config: str | None, debug: bool, no_audio: bool, tui: bool):
     """Start the Voice Agent."""
     if config:
         config_path = Path(config)
@@ -69,18 +74,40 @@ def main(config: str | None, debug: bool, no_audio: bool):
 
         if debug:
             agent_config.logging.level = "DEBUG"
+        else:
+            # Suppress info/debug output unless --debug specified
+            agent_config.logging.level = "WARNING"
 
         if no_audio:
             agent_config.audio.input_device = None
             agent_config.audio.output_device = None
 
-        agent = VoiceAgent(config=agent_config)
+        if tui:
+            # Probe for required TUI dependencies without importing our module (avoids unused import)
+            try:
+                import importlib
+
+                importlib.import_module("textual")
+                importlib.import_module("rich")
+            except ImportError as e:
+                click.echo(
+                    "❌ TUI dependencies not installed. Install with: pip install textual rich"
+                )
+                click.echo(f"Import error: {e}")
+                return
+
+        agent = VoiceAgent(config=agent_config, text_only=bool(tui))
 
         click.echo(f"Using config: {config_path}")
-        click.echo("🎤 Voice Agent starting...")
-        click.echo("Press Ctrl+C to stop")
-
-        asyncio.run(agent.start())
+        if tui:
+            click.echo("🖥️  Launching Voice Agent TUI (experimental)...")
+            click.echo(" - Audio loop disabled (text interaction only in this mode)")
+            click.echo(" - Type your queries in the input panel. Ctrl+C to exit.")
+            asyncio.run(_run_tui(agent))
+        else:
+            click.echo("🎤 Voice Agent starting...")
+            click.echo("Press Ctrl+C to stop")
+            asyncio.run(agent.start())
 
     except KeyboardInterrupt:
         click.echo("\n👋 Voice Agent stopped")
@@ -90,6 +117,15 @@ def main(config: str | None, debug: bool, no_audio: bool):
             import traceback
 
             traceback.print_exc()
+
+
+async def _run_tui(agent: VoiceAgent) -> None:
+    """Initialize (if needed) and launch the TUI in text-only mode."""
+    if not agent.llm_service:
+        await agent.initialize()
+    from voice_agent.ui.tui_app import run_tui  # type: ignore
+
+    await run_tui(agent)
 
 
 if __name__ == "__main__":

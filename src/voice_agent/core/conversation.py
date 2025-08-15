@@ -5,7 +5,7 @@ Main conversation manager and VoiceAgent class.
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable
 
 from .audio_manager import AudioManager
 from .config import Config
@@ -13,6 +13,9 @@ from .llm_service import LLMService
 from .stt_service import STTService
 from .tool_executor import ToolExecutor
 from .tts_service import TTSService
+
+
+StateCallback = Callable[[str, str, Optional[str]], None]
 
 
 class VoiceAgent:
@@ -28,7 +31,11 @@ class VoiceAgent:
     """
 
     def __init__(
-        self, config: Optional[Config] = None, config_path: Optional[Path] = None
+        self,
+        config: Optional[Config] = None,
+        config_path: Optional[Path] = None,
+        text_only: bool = False,
+        state_callback: Optional["StateCallback"] = None,
     ):
         """
         Initialize the Voice Agent.
@@ -42,16 +49,29 @@ class VoiceAgent:
         # Load configuration
         if config:
             self.config = config
+            self._config_path: Optional[Path] = None
         elif config_path:
             self.config = Config.load(config_path)
+            self._config_path = config_path
         else:
-            # Use default config
+            # Use default config (remember path for persistence of UI toggles)
             default_config_path = (
                 Path(__file__).parent.parent / "config" / "default.yaml"
             )
             self.config = Config.load(default_config_path)
+            self._config_path = default_config_path
 
-        # Initialize components
+        # Mode flags
+        ui_cfg = getattr(self.config, "ui", None)
+        force_text_only_cfg = (
+            getattr(ui_cfg, "force_text_only", False) if ui_cfg else False
+        )
+        self.text_only = text_only or force_text_only_cfg
+
+        # Optional pipeline state callback (component, state, message)
+        self._state_callback = state_callback
+
+        # Initialize component placeholders
         self.audio_manager: Optional[AudioManager] = None
         self.stt_service: Optional[STTService] = None
         self.tts_service: Optional[TTSService] = None
@@ -76,20 +96,33 @@ class VoiceAgent:
         """Initialize all components."""
         self.logger.info("Initializing Voice Agent components...")
 
-        # Initialize audio manager
-        self.audio_manager = AudioManager(self.config.audio)
-        await self.audio_manager.initialize()
+        if not self.text_only:
+            # Initialize audio manager
+            self.audio_manager = AudioManager(
+                self.config.audio, state_callback=self._state_callback
+            )
+            await self.audio_manager.initialize()
 
-        # Initialize STT service
-        self.stt_service = STTService(self.config.stt)
-        await self.stt_service.initialize()
+            # Initialize STT service
+            self.stt_service = STTService(
+                self.config.stt, state_callback=self._state_callback
+            )
+            await self.stt_service.initialize()
 
-        # Initialize TTS service (pass audio manager for playback integration)
-        self.tts_service = TTSService(self.config.tts, self.audio_manager)
-        await self.tts_service.initialize()
+            # Initialize TTS service (pass audio manager for playback integration)
+            self.tts_service = TTSService(
+                self.config.tts, self.audio_manager, state_callback=self._state_callback
+            )
+            await self.tts_service.initialize()
+        else:
+            self.logger.info(
+                "Text-only mode: skipping audio / STT / TTS initialization"
+            )
 
         # Initialize LLM service
-        self.llm_service = LLMService(self.config.llm)
+        self.llm_service = LLMService(
+            self.config.llm, state_callback=self._state_callback
+        )
         await self.llm_service.initialize()
 
         # Initialize tool executor
@@ -100,15 +133,11 @@ class VoiceAgent:
 
     async def start(self) -> None:
         """Start the voice agent main loop."""
-        if not all(
-            [
-                self.audio_manager,
-                self.stt_service,
-                self.tts_service,
-                self.llm_service,
-                self.tool_executor,
-            ]
-        ):
+        required = [self.llm_service, self.tool_executor]
+        if not self.text_only:
+            required.extend([self.audio_manager, self.stt_service, self.tts_service])
+
+        if not all(required):
             await self.initialize()
 
         self.is_running = True
@@ -140,39 +169,73 @@ class VoiceAgent:
         self.logger.info("Voice Agent stopped")
 
     async def _main_loop(self) -> None:
-        """Main conversation loop."""
+        """Main conversation loop.
+
+        In text_only mode this loop idles (input is provided via external calls,
+        e.g. TUI adapter invoking process_text). In voice mode it performs the
+        full capture → STT → LLM → TTS pipeline.
+        """
         while self.is_running:
             try:
-                # Listen for user input
+                if self.text_only:
+                    # Idle briefly; external components (TUI) drive interactions.
+                    await asyncio.sleep(0.25)
+                    continue
+
+                # Ensure required components are initialized (runtime safety + type narrowing)
+                if not all(
+                    [
+                        self.audio_manager,
+                        self.stt_service,
+                        self.tts_service,
+                        self.llm_service,
+                        self.tool_executor,
+                    ]
+                ):
+                    self.logger.warning(
+                        "One or more pipeline components missing (reinitializing)..."
+                    )
+                    await self.initialize()
+                    await asyncio.sleep(0.25)
+                    continue
+
+                # Type narrowing for static analyzers
+                assert (
+                    self.audio_manager
+                    and self.stt_service
+                    and self.tts_service
+                    and self.llm_service
+                    and self.tool_executor is not None
+                )
+
+                # Voice mode: capture microphone audio
                 audio_data = await self.audio_manager.listen()
                 if audio_data is None or (
                     hasattr(audio_data, "size") and audio_data.size == 0
                 ):
                     continue
 
-                # Convert speech to text
+                # STT
                 user_input = await self.stt_service.transcribe(audio_data)
                 if not user_input.strip():
                     continue
-
                 self.logger.info(f"User: {user_input}")
 
-                # Process with LLM
+                # LLM
                 response = await self.llm_service.generate_response(
                     user_input, self.conversation_history, self.tool_executor
                 )
-
                 self.logger.info(f"Agent: {response}")
 
-                # Convert text to speech and play
+                # TTS
                 await self.tts_service.speak(response)
 
-                # Update conversation history
+                # History
                 self._update_history(user_input, response)
 
             except Exception as e:
                 self.logger.error(f"Error in main loop: {e}")
-                await asyncio.sleep(1)  # Brief pause before retrying
+                await asyncio.sleep(1)
 
     def _update_history(self, user_input: str, agent_response: str) -> None:
         """Update conversation history."""
@@ -188,6 +251,18 @@ class VoiceAgent:
         if len(self.conversation_history) > max_history:
             self.conversation_history = self.conversation_history[-max_history:]
 
+    def set_state_callback(self, callback: Optional["StateCallback"]) -> None:
+        """Install or replace the pipeline state callback and propagate to components."""
+        self._state_callback = callback
+        if self.audio_manager:
+            self.audio_manager.set_state_callback(callback)
+        if self.stt_service:
+            self.stt_service.set_state_callback(callback)
+        if self.tts_service:
+            self.tts_service.set_state_callback(callback)
+        if self.llm_service:
+            self.llm_service.set_state_callback(callback)
+
     async def process_text(self, text: str) -> str:
         """
         Process text input without audio (for testing/debugging).
@@ -198,8 +273,13 @@ class VoiceAgent:
         Returns:
             Agent response text
         """
-        if not self.llm_service:
+        if not self.llm_service or not self.tool_executor:
             await self.initialize()
+            if not self.llm_service:
+                raise RuntimeError("LLM service failed to initialize")
+        # Narrow types for static analyzers
+        assert self.llm_service is not None
+        assert self.tool_executor is not None
 
         response = await self.llm_service.generate_response(
             text, self.conversation_history, self.tool_executor

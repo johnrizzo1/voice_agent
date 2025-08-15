@@ -32,15 +32,21 @@ class LLMService:
     - Function calling capabilities
     """
 
-    def __init__(self, config: LLMConfig):
+    def __init__(
+        self,
+        config: LLMConfig,
+        state_callback: Optional[Callable[[str, str, Optional[str]], None]] = None,
+    ):
         """
         Initialize the LLM service.
 
         Args:
             config: LLM configuration settings
+            state_callback: Optional callback(component, state, message)
         """
         self.config = config
         self.logger = logging.getLogger(__name__)
+        self._state_callback = state_callback
 
         # Model instances
         self.ollama_client: Optional[ollama.Client] = None
@@ -68,11 +74,24 @@ class LLMService:
             self.logger.error("No LLM backend available")
             return "none"
 
+    def set_state_callback(
+        self, cb: Optional[Callable[[str, str, Optional[str]], None]]
+    ) -> None:
+        self._state_callback = cb
+
+    def _emit_state(self, state: str, message: Optional[str] = None) -> None:
+        if self._state_callback:
+            try:
+                self._state_callback("llm", state, message)
+            except Exception:
+                self.logger.debug("LLM state callback error", exc_info=True)
+
     async def initialize(self) -> None:
         """Initialize the LLM service and load models."""
         self.logger.info(
             f"Initializing LLM service with backend: {self.current_backend}"
         )
+        self._emit_state("initializing", f"backend={self.current_backend}")
 
         if self.current_backend == "ollama":
             await self._initialize_ollama()
@@ -84,6 +103,7 @@ class LLMService:
 
         self.is_initialized = True
         self.logger.info("LLM service initialized")
+        self._emit_state("ready", None)
 
     async def _initialize_ollama(self) -> None:
         """Initialize Ollama client."""
@@ -160,15 +180,19 @@ class LLMService:
         try:
             # Prepare messages
             messages = self._prepare_messages(user_input, conversation_history)
+            self._emit_state("active", "generating")
 
             # Check if we need to use tools
             if tool_executor and self._should_use_tools(user_input):
-                return await self._generate_with_tools(messages, tool_executor)
+                result = await self._generate_with_tools(messages, tool_executor)
             else:
-                return await self._generate_simple(messages)
+                result = await self._generate_simple(messages)
+            self._emit_state("ready", None)
+            return result
 
         except Exception as e:
             self.logger.error(f"Error generating response: {e}")
+            self._emit_state("error", "generation error")
             return (
                 "I apologize, but I encountered an error while processing your request."
             )
@@ -285,7 +309,7 @@ class LLMService:
             response = await loop.run_in_executor(
                 None,
                 lambda: self.transformers_tokenizer.decode(
-                    outputs[0][len(inputs.input_ids[0]):], skip_special_tokens=True
+                    outputs[0][len(inputs.input_ids[0]) :], skip_special_tokens=True
                 ),
             )
 
@@ -331,8 +355,8 @@ class LLMService:
             # Generate initial response
             response = await self._generate_simple(messages)
 
-            # Check if response contains tool calls
-            if "TOOL_CALL:" in response:
+            # Check (case-insensitive) if response contains tool calls
+            if "TOOL_CALL:" in response.upper():
                 return await self._handle_tool_call(response, tool_executor)
 
             return response
@@ -358,52 +382,109 @@ class LLMService:
         return "\n".join(tool_descriptions)
 
     async def _handle_tool_call(self, response: str, tool_executor: Any) -> str:
-        """Handle tool calling in the response."""
+        """Handle tool calling (robust + case-insensitive) with enhanced visualization."""
         try:
-            # Extract tool call from response
-            if "TOOL_CALL:" not in response:
+            upper_resp = response.upper()
+            if "TOOL_CALL:" not in upper_resp:
                 return response
 
-            parts = response.split("TOOL_CALL:", 1)
-            tool_call_part = parts[1].strip()
+            idx = upper_resp.index("TOOL_CALL:")
+            tool_call_part = response[idx + len("TOOL_CALL:") :].strip()
+            tool_call_part = " ".join(tool_call_part.split())
 
-            # Parse tool call: tool_name(param1='value1', param2='value2')
-            if "(" in tool_call_part and ")" in tool_call_part:
-                tool_name = tool_call_part.split("(")[0].strip()
+            import re
 
-                # Extract parameters from the parentheses
-                params_str = tool_call_part.split("(", 1)[1].rsplit(")", 1)[0]
-                parameters = self._parse_tool_parameters(params_str)
+            m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\s*(\((.*)\))?", tool_call_part)
+            if not m:
+                return "I attempted to call a tool but the request format was unclear."
 
-                # Execute tool with parsed parameters
-                try:
-                    result = await tool_executor.execute_tool(tool_name, parameters)
+            tool_name = m.group(1).lower()
+            params_inside = m.group(3) or ""
+            parameters = self._parse_tool_parameters(params_inside)
 
-                    if result.get("success", False):
-                        tool_result = result.get("result", {})
+            if (
+                tool_name == "weather"
+                and "location" not in parameters
+                and params_inside
+            ):
+                stripped = params_inside.strip()
+                if (stripped.startswith("'") and stripped.endswith("'")) or (
+                    stripped.startswith('"') and stripped.endswith('"')
+                ):
+                    parameters["location"] = stripped[1:-1]
 
-                        # Format response based on tool type
-                        if tool_name == "weather":
-                            return self._format_weather_response(tool_result)
-                        else:
-                            # Generic formatting for other tools
-                            if isinstance(tool_result, dict):
-                                return tool_result.get("description", str(tool_result))
-                            return str(tool_result)
-                    else:
-                        error_msg = result.get("error", "Unknown error")
-                        return (
-                            f"I couldn't get the {tool_name} information: {error_msg}"
-                        )
+            try:
+                exec_result = await tool_executor.execute_tool(tool_name, parameters)
+            except Exception as exec_err:
+                self.logger.error(
+                    f"Tool execution exception for {tool_name}: {exec_err}"
+                )
+                return (
+                    f"🔧 Tool: {tool_name}\n"
+                    f"Status: error\n"
+                    f"Details: Unexpected execution exception."
+                )
 
-                except Exception as e:
-                    return f"I tried to use the {tool_name} tool, but encountered an error: {e}"
+            if not exec_result.get("success"):
+                err = exec_result.get("error", "unknown error")
+                return f"🔧 Tool: {tool_name}\n" f"Status: failed\n" f"Error: {err}"
 
-            return response
+            tool_result = exec_result.get("result")
+
+            if tool_name == "weather":
+                formatted = self._format_weather_response(tool_result)
+                return (
+                    f"🔧 Tool: weather\n"
+                    f"Parameters: {parameters or '{}'}\n"
+                    f"Result:\n{formatted}"
+                )
+
+            if isinstance(tool_result, dict):
+                description = tool_result.get("description")
+                kv_lines: List[str] = []
+                for k, v in list(tool_result.items())[:12]:
+                    if k == "description":
+                        continue
+                    kv_lines.append(f"  - {k}: {v}")
+                summary_block = (
+                    "\n".join(kv_lines) if kv_lines else "  (no additional fields)"
+                )
+                if description:
+                    return (
+                        f"🔧 Tool: {tool_name}\n"
+                        f"Parameters: {parameters or '{}'}\n"
+                        f"Description: {description}\n"
+                        f"Fields:\n{summary_block}"
+                    )
+                return (
+                    f"🔧 Tool: {tool_name}\n"
+                    f"Parameters: {parameters or '{}'}\n"
+                    f"Fields:\n{summary_block}"
+                )
+
+            if isinstance(tool_result, (list, tuple)):
+                preview_items = list(tool_result)[:10]
+                rendered_list = (
+                    "\n".join(f"  - {item}" for item in preview_items) or "  (empty)"
+                )
+                more = ""
+                if len(tool_result) > 10:
+                    more = f"\n  ... ({len(tool_result) - 10} more)"
+                return (
+                    f"🔧 Tool: {tool_name}\n"
+                    f"Parameters: {parameters or '{}'}\n"
+                    f"Items:\n{rendered_list}{more}"
+                )
+
+            return (
+                f"🔧 Tool: {tool_name}\n"
+                f"Parameters: {parameters or '{}'}\n"
+                f"Result: {tool_result}"
+            )
 
         except Exception as e:
             self.logger.error(f"Tool call handling error: {e}")
-            return response
+            return "I attempted to use a tool but encountered a parsing error."
 
     def _parse_tool_parameters(self, params_str: str) -> Dict[str, Any]:
         """Parse tool parameters from string format."""

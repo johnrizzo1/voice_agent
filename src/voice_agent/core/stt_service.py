@@ -6,7 +6,7 @@ import asyncio
 import logging
 import wave
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable
 
 import numpy as np
 
@@ -34,15 +34,21 @@ class STTService:
     - Vosk (lightweight, streaming)
     """
 
-    def __init__(self, config: STTConfig):
+    def __init__(
+        self,
+        config: STTConfig,
+        state_callback: Optional[Callable[[str, str, Optional[str]], None]] = None,
+    ):
         """
         Initialize the STT service.
 
         Args:
             config: STT configuration settings
+            state_callback: Optional callback(component, state, message)
         """
         self.config = config
         self.logger = logging.getLogger(__name__)
+        self._state_callback = state_callback
 
         # Model instances
         self.whisper_model: Optional[WhisperModel] = None
@@ -67,11 +73,25 @@ class STTService:
             self.logger.error("No STT backend available")
             return "none"
 
+    def set_state_callback(
+        self, cb: Optional[Callable[[str, str, Optional[str]], None]]
+    ) -> None:
+        """Set/replace state callback."""
+        self._state_callback = cb
+
+    def _emit_state(self, state: str, message: Optional[str] = None) -> None:
+        if self._state_callback:
+            try:
+                self._state_callback("stt", state, message)
+            except Exception:
+                self.logger.debug("STT state callback error", exc_info=True)
+
     async def initialize(self) -> None:
         """Initialize the STT service and load models."""
         self.logger.info(
             f"Initializing STT service with backend: {self.current_backend}"
         )
+        self._emit_state("initializing", f"backend={self.current_backend}")
 
         if self.current_backend == "whisper":
             await self._initialize_whisper()
@@ -79,10 +99,12 @@ class STTService:
             await self._initialize_vosk()
         else:
             self.logger.error("No STT backend could be initialized")
+            self._emit_state("error", "no backend")
             return
 
         self.is_initialized = True
         self.logger.info("STT service initialized")
+        self._emit_state("ready", None)
 
     async def _initialize_whisper(self) -> None:
         """Initialize Faster Whisper model."""
@@ -141,6 +163,7 @@ class STTService:
         return model_dir / self.config.model
 
     async def transcribe(self, audio_data: np.ndarray) -> str:
+        self._emit_state("active", "transcribing")
         """
         Transcribe audio data to text.
 
@@ -156,10 +179,13 @@ class STTService:
         if self.current_backend == "whisper":
             return await self._transcribe_whisper(audio_data)
         elif self.current_backend == "vosk":
-            return await self._transcribe_vosk(audio_data)
+            result = await self._transcribe_vosk(audio_data)
         else:
             self.logger.error("No STT backend available for transcription")
+            self._emit_state("error", "no backend for transcription")
             return ""
+        self._emit_state("ready", None)
+        return result
 
     async def _transcribe_whisper(self, audio_data: np.ndarray) -> str:
         """Transcribe using Faster Whisper."""

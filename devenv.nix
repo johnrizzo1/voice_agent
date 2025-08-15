@@ -1,4 +1,10 @@
-{ pkgs, lib, config, inputs, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  inputs,
+  ...
+}:
 
 # Devenv configuration for the voice_agent Python project.
 # Goals:
@@ -13,39 +19,44 @@ let
   pkgs-unstable = import inputs.nixpkgs-unstable {
     system = pkgs.stdenv.system;
   };
-in {
+in
+{
   packages = with pkgs; [
     git
     portaudio
     espeak-ng
     alsa-utils
     # Core Python environment with runtime & dev dependencies
-    (python312.withPackages (ps: with ps; [
-      # Runtime
-      click
-      faster-whisper
-      numpy
-      ollama
-      pyaudio
-      psutil
-      pydantic
-      pyttsx3
-      pyyaml
-      requests
-      torch
-      torchaudio
-      transformers
-      tensorflow
+    (python312.withPackages (
+      ps: with ps; [
+        # Runtime
+        click
+        faster-whisper
+        numpy
+        ollama
+        pyaudio
+        psutil
+        pydantic
+        pyttsx3
+        pyyaml
+        requests
+        rich
+        textual
+        torch
+        torchaudio
+        transformers
+        tensorflow
 
-      # Dev / QA
-      pytest
-      pytest-asyncio
-      black
-      isort
-      flake8
-      mypy
-      # (Add any additional QA tools here)
-    ]))
+        # Dev / QA
+        pytest
+        pytest-asyncio
+        black
+        isort
+        flake8
+        mypy
+        # (Add any additional QA tools here)
+      ]
+    ))
   ];
 
   # Python language support (provides python, venv helpers, etc.)
@@ -55,6 +66,7 @@ in {
   # Use an additional venv layer for a few wheels not available (or easier via pip)
   # These are installed ad‑hoc inside the devenv-managed venv.
   languages.python.venv.enable = true;
+  languages.python.venv.quiet = true;
   languages.python.venv.requirements = ''
     webrtcvad
     vosk
@@ -97,10 +109,10 @@ in {
       export PYTHONPATH="$PWD/src"
     fi
 
-    echo "Devenv Python environment ready."
-    echo "Using PYTHONPATH=$PYTHONPATH"
-    echo "Run:  python -m voice_agent.main --debug"
-    echo "Or use tasks: devenv tasks run app:run | app:test | app:lint | app:typecheck"
+    # echo "Devenv Python environment ready."
+    # echo "Using PYTHONPATH=$PYTHONPATH"
+    # echo "Run:  python -m voice_agent.main --debug"
+    # echo "Or use tasks: devenv tasks run app:run | app:test | app:lint | app:typecheck"
   '';
 
   claude.code.enable = true;
@@ -115,7 +127,10 @@ in {
   };
 
   cachix.enable = true;
-  cachix.pull = [ "pre-commit-hooks" "nix-community" ];
+  cachix.pull = [
+    "pre-commit-hooks"
+    "nix-community"
+  ];
   cachix.push = "cv-ml-cache";
 
   dotenv.enable = true;

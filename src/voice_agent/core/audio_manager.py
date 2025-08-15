@@ -12,6 +12,79 @@ import webrtcvad
 
 from .config import AudioConfig
 
+# ---------------------------------------------------------------------------
+# Low-level ALSA / JACK noise suppression helpers
+# ---------------------------------------------------------------------------
+from contextlib import contextmanager
+import os
+import ctypes
+from ctypes import CFUNCTYPE, c_char_p, c_int
+
+
+@contextmanager
+def _suppress_alsa_jack_errors(enabled: bool = True):
+    """
+    Suppress stderr noise from ALSA / JACK / PortAudio initialization.
+    Strategy:
+      1. Attempt to set ALSA error handler via snd_lib_error_set_handler to a no-op.
+      2. Fallback to temporarily redirecting file descriptor 2 (stderr) to /dev/null.
+    Only active when `enabled` is True (i.e., not in debug mode).
+    """
+    if not enabled:
+        # Debug mode – do not suppress.
+        yield
+        return
+
+    # Try native ALSA handler first
+    reset_needed = False
+    c_err_handler = None
+    devnull = None
+    old_stderr_fd = None
+    try:
+        ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
+
+        def _py_alsa_error_handler(filename, line, function, err, fmt):
+            # Intentionally ignore all ALSA messages
+            return
+
+        try:
+            asound = ctypes.cdll.LoadLibrary("libasound.so")
+            c_err_handler = ERROR_HANDLER_FUNC(_py_alsa_error_handler)
+            asound.snd_lib_error_set_handler(c_err_handler)
+            reset_needed = True
+            yield
+        except Exception:
+            # Fallback: redirect stderr
+            try:
+                devnull = open(os.devnull, "w")
+                old_stderr_fd = os.dup(2)
+                os.dup2(devnull.fileno(), 2)
+            except Exception:
+                # If even this fails, just proceed without suppression
+                pass
+            yield
+        finally:
+            # Restore ALSA handler
+            if reset_needed:
+                try:
+                    asound.snd_lib_error_set_handler(None)  # type: ignore
+                except Exception:
+                    pass
+            # Restore stderr
+            if old_stderr_fd is not None:
+                try:
+                    os.dup2(old_stderr_fd, 2)
+                except Exception:
+                    pass
+            if devnull is not None:
+                try:
+                    devnull.close()
+                except Exception:
+                    pass
+    except Exception:
+        # Absolute fallback: do nothing
+        yield
+
 
 class AudioManager:
     """
@@ -25,12 +98,17 @@ class AudioManager:
     - Real-time buffering
     """
 
-    def __init__(self, config: AudioConfig):
+    def __init__(
+        self,
+        config: AudioConfig,
+        state_callback: Optional[Callable[[str, str, Optional[str]], None]] = None,
+    ):
         """
         Initialize the audio manager.
 
         Args:
             config: Audio configuration settings
+            state_callback: Optional callback(component, state, message) to report status
         """
         self.config = config
         self.logger = logging.getLogger(__name__)
@@ -42,6 +120,8 @@ class AudioManager:
 
         # Voice activity detection
         self.vad: Optional[webrtcvad.Vad] = None
+        # Most recent normalized input level (0.0–1.0) updated in _input_callback for UI meter
+        self.last_level: float = 0.0
 
         # Audio buffers
         self.input_buffer: List[bytes] = []
@@ -51,10 +131,30 @@ class AudioManager:
 
         # Callbacks
         self.audio_callback: Optional[Callable] = None
+        self._state_callback = state_callback
+
+    def set_state_callback(
+        self, cb: Optional[Callable[[str, str, Optional[str]], None]]
+    ) -> None:
+        """Set or replace the pipeline state callback."""
+        self._state_callback = cb
+
+    def _emit_state(
+        self, component: str, state: str, message: Optional[str] = None
+    ) -> None:
+        """Emit a pipeline component state update if callback is set."""
+        if self._state_callback:
+            try:
+                self._state_callback(component, state, message)
+            except Exception:
+                # Never let UI callback errors break audio
+                self.logger.debug("State callback error", exc_info=True)
 
     async def initialize(self) -> None:
         """Initialize audio components."""
         self.logger.info("Initializing audio manager...")
+        self._emit_state("audio_input", "initializing", "Initializing audio")
+        self._emit_state("audio_output", "initializing", "Initializing audio")
 
         try:
             # Initialize PyAudio
@@ -66,9 +166,13 @@ class AudioManager:
             try:
                 self.vad = webrtcvad.Vad(int(vad_level))
             except Exception:
-                self.logger.warning(f"Invalid vad_aggressiveness={vad_level}, falling back to 1")
+                self.logger.warning(
+                    f"Invalid vad_aggressiveness={vad_level}, falling back to 1"
+                )
                 self.vad = webrtcvad.Vad(1)
-            self.logger.info(f"WebRTC VAD initialized with aggressiveness level {vad_level}")
+            self.logger.info(
+                f"WebRTC VAD initialized with aggressiveness level {vad_level}"
+            )
 
             # Setup input stream
             if self.config.input_device is not None or self._has_input_device():
@@ -84,17 +188,36 @@ class AudioManager:
 
             self.logger.info("Audio manager initialized successfully")
 
+            self._emit_state(
+                "audio_input",
+                "ready" if self.input_stream else "disabled",
+                None if self.input_stream else "No input device",
+            )
+            self._emit_state(
+                "audio_output",
+                "ready" if self.output_stream else "disabled",
+                None if self.output_stream else "No output device",
+            )
+
         except Exception as e:
             self.logger.error(f"Failed to initialize audio manager: {e}")
+            self._emit_state("audio_input", "error", str(e))
+            self._emit_state("audio_output", "error", str(e))
             raise
 
     def _has_input_device(self) -> bool:
         """Check if an input device is available."""
+        if self.pyaudio is None:
+            return False
         try:
             device_count = self.pyaudio.get_device_count()
             for i in range(device_count):
                 device_info = self.pyaudio.get_device_info_by_index(i)
-                if device_info["maxInputChannels"] > 0:
+                try:
+                    max_in = int(float(device_info.get("maxInputChannels", 0) or 0))
+                except (ValueError, TypeError):
+                    max_in = 0
+                if max_in > 0:
                     return True
             return False
         except Exception as e:
@@ -103,11 +226,17 @@ class AudioManager:
 
     def _has_output_device(self) -> bool:
         """Check if an output device is available."""
+        if self.pyaudio is None:
+            return False
         try:
             device_count = self.pyaudio.get_device_count()
             for i in range(device_count):
                 device_info = self.pyaudio.get_device_info_by_index(i)
-                if device_info["maxOutputChannels"] > 0:
+                try:
+                    max_out = int(float(device_info.get("maxOutputChannels", 0) or 0))
+                except (ValueError, TypeError):
+                    max_out = 0
+                if max_out > 0:
                     return True
             return False
         except Exception as e:
@@ -116,6 +245,9 @@ class AudioManager:
 
     def _setup_input_stream(self) -> None:
         """Setup the audio input stream."""
+        if self.pyaudio is None:
+            self.logger.error("PyAudio not initialized; cannot open input stream")
+            return
         try:
             self.input_stream = self.pyaudio.open(
                 format=pyaudio.paInt16,
@@ -133,6 +265,9 @@ class AudioManager:
 
     def _setup_output_stream(self) -> None:
         """Setup the audio output stream."""
+        if self.pyaudio is None:
+            self.logger.error("PyAudio not initialized; cannot open output stream")
+            return
         try:
             self.output_stream = self.pyaudio.open(
                 format=pyaudio.paInt16,
@@ -152,16 +287,27 @@ class AudioManager:
         if status:
             self.logger.warning(f"Audio input callback status: {status}")
 
+        # Update level meter (RMS scaled) irrespective of recording state
+        try:
+            samples = np.frombuffer(in_data, dtype=np.int16)
+            if samples.size:
+                rms = float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
+                # Scale: speech RMS typically up to ~10000; clamp to 1.0
+                self.last_level = max(0.0, min(rms / 12000.0, 1.0))
+        except Exception:
+            # Non-fatal; keep previous value
+            pass
+
         # Only record if we're not speaking (prevent feedback)
         if self.is_recording and not self.is_speaking:
             self.input_buffer.append(in_data)
 
-        # Call external callback if set
-        if self.audio_callback and self.is_recording and not self.is_speaking:
-            try:
-                self.audio_callback(in_data)
-            except Exception as e:
-                self.logger.error(f"Error in audio callback: {e}")
+            # Call external callback if set
+            if self.audio_callback:
+                try:
+                    self.audio_callback(in_data)
+                except Exception as e:
+                    self.logger.error(f"Error in audio callback: {e}")
 
         return (None, pyaudio.paContinue)
 
@@ -179,6 +325,7 @@ class AudioManager:
         # Start recording
         self.is_recording = True
         self.input_buffer.clear()
+        self._emit_state("audio_input", "active", "listening")
 
         # Wait for voice activity
         await self._wait_for_speech()
@@ -187,19 +334,21 @@ class AudioManager:
         self.is_recording = False
 
         if not self.input_buffer:
+            self._emit_state("audio_input", "ready", None)
             return None
 
         # Convert buffer to numpy array
         audio_data = b"".join(self.input_buffer)
         audio_array = np.frombuffer(audio_data, dtype=np.int16)
 
+        self._emit_state("audio_input", "ready", None)
         return audio_array
 
     async def _wait_for_speech(self) -> None:
         """Wait for speech activity using VAD with stricter start criteria to avoid false triggers (e.g. keyboard clicks)."""
-        speech_frames = 0          # Count of speech-classified frames (not yet confirmed start)
-        silence_frames = 0         # Count of silence frames after speech start
-        speech_started = False     # Becomes True only after min_speech_frames consecutive (or near-consecutive) speech frames
+        speech_frames = 0  # Count of speech-classified frames (not yet confirmed start)
+        silence_frames = 0  # Count of silence frames after speech start
+        speech_started = False  # Becomes True only after min_speech_frames consecutive (or near-consecutive) speech frames
 
         # Pull configurable thresholds with safe defaults
         min_speech_frames = getattr(self.config, "min_speech_frames", 5)
@@ -214,6 +363,7 @@ class AudioManager:
 
             # Implement cooldown period after TTS ends
             import time
+
             if time.time() - self.last_speech_end_time < cooldown:
                 await asyncio.sleep(0.1)
                 continue
@@ -260,8 +410,7 @@ class AudioManager:
 
                 # Timeout: no confirmed speech after buffer grows large
                 if (
-                    not speech_started
-                    and len(self.input_buffer) > 480
+                    not speech_started and len(self.input_buffer) > 480
                 ):  # ~5 seconds at 16kHz (increased timeout)
                     self.logger.debug(
                         "No confirmed speech detected within timeout window"
@@ -287,7 +436,9 @@ class AudioManager:
 
             # VAD expects specific frame sizes (10, 20, or 30 ms)
             frame_size_20ms = int(self.config.sample_rate * 0.02)
-            if len(frame) < frame_size_20ms * 2:  # Need enough samples (2 bytes per int16)
+            if (
+                len(frame) < frame_size_20ms * 2
+            ):  # Need enough samples (2 bytes per int16)
                 return False
 
             frame_20ms = frame[: frame_size_20ms * 2]
@@ -307,7 +458,9 @@ class AudioManager:
             # Previous behavior returned True (treat errors as speech); for noise suppression we choose False
             return False
 
-    async def play_audio(self, audio_data: np.ndarray, sample_rate: Optional[int] = None) -> None:
+    async def play_audio(
+        self, audio_data: np.ndarray, sample_rate: Optional[int] = None
+    ) -> None:
         """
         Play audio data through the output stream.
 
@@ -349,7 +502,7 @@ class AudioManager:
             # Play audio in chunks
             chunk_size = self.config.chunk_size * 2  # 2 bytes per sample
             for i in range(0, len(audio_bytes), chunk_size):
-                chunk = audio_bytes[i: i + chunk_size]
+                chunk = audio_bytes[i : i + chunk_size]
                 self.output_stream.write(chunk)
 
             # Calculate proper delay based on audio length
@@ -364,6 +517,7 @@ class AudioManager:
             self.is_speaking = False
             # Record end time for cooldown logic and re-enable input
             import time
+
             self.last_speech_end_time = time.time()
             # Clear any residual audio that might have been captured during playback
             self.clear_input_buffer()

@@ -6,7 +6,7 @@ import asyncio
 import logging
 import wave
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable
 
 import numpy as np
 
@@ -57,17 +57,24 @@ class TTSService:
     - pyttsx3 (cross-platform system TTS)
     """
 
-    def __init__(self, config: TTSConfig, audio_manager=None):
+    def __init__(
+        self,
+        config: TTSConfig,
+        audio_manager=None,
+        state_callback: Optional[Callable[[str, str, Optional[str]], None]] = None,
+    ):
         """
         Initialize the TTS service.
 
         Args:
             config: TTS configuration settings
             audio_manager: Optional audio manager for audio playback
+            state_callback: Optional callback(component, state, message)
         """
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.audio_manager = audio_manager
+        self._state_callback = state_callback
 
         # Engine instances
         self.pyttsx3_engine: Optional[pyttsx3.Engine] = None
@@ -102,11 +109,24 @@ class TTSService:
             self.logger.error("No TTS backend available")
             return "none"
 
+    def set_state_callback(
+        self, cb: Optional[Callable[[str, str, Optional[str]], None]]
+    ) -> None:
+        self._state_callback = cb
+
+    def _emit_state(self, state: str, message: Optional[str] = None) -> None:
+        if self._state_callback:
+            try:
+                self._state_callback("tts", state, message)
+            except Exception:
+                self.logger.debug("TTS state callback error", exc_info=True)
+
     async def initialize(self) -> None:
         """Initialize the TTS service and load engines."""
         self.logger.info(
             f"Initializing TTS service with backend: {self.current_backend}"
         )
+        self._emit_state("initializing", f"backend={self.current_backend}")
 
         if self.current_backend == "bark":
             await self._initialize_bark()
@@ -122,6 +142,7 @@ class TTSService:
 
         self.is_initialized = True
         self.logger.info("TTS service initialized")
+        self._emit_state("ready", None)
 
     async def _initialize_pyttsx3(self) -> None:
         """Initialize pyttsx3 engine."""
@@ -257,6 +278,7 @@ class TTSService:
             raise
 
     async def speak(self, text: str) -> None:
+        self._emit_state("active", "speaking")
         """
         Convert text to speech and play it.
 
@@ -283,6 +305,7 @@ class TTSService:
             self.logger.error(
                 f"No TTS backend available for speech (current: {self.current_backend})"
             )
+            self._emit_state("error", "no backend")
 
     async def _speak_pyttsx3(self, text: str) -> None:
         """Generate and play speech using pyttsx3."""
@@ -363,10 +386,15 @@ class TTSService:
             # Use configured Bark voice preset (history prompt) if provided for deterministic voice
             if getattr(self.config, "bark_voice_preset", None):
                 audio_array = await loop.run_in_executor(
-                    None, lambda: generate_audio(text, history_prompt=self.config.bark_voice_preset)
+                    None,
+                    lambda: generate_audio(
+                        text, history_prompt=self.config.bark_voice_preset
+                    ),
                 )
             else:
-                audio_array = await loop.run_in_executor(None, lambda: generate_audio(text))
+                audio_array = await loop.run_in_executor(
+                    None, lambda: generate_audio(text)
+                )
 
             # Bark returns float32 in range [-1.0, 1.0]; Python's wave module (used in _load_audio_file)
             # only supports PCM (format code 1) and rejects IEEE float WAV (format code 3), which caused:
@@ -382,7 +410,9 @@ class TTSService:
                 else:
                     audio_pcm16 = audio_array
             except Exception as conv_err:
-                self.logger.error(f"Failed converting Bark audio to int16 PCM: {conv_err}")
+                self.logger.error(
+                    f"Failed converting Bark audio to int16 PCM: {conv_err}"
+                )
                 return
 
             # Save audio as PCM16 WAV
@@ -424,7 +454,9 @@ class TTSService:
             # We already know actual audio length; we only need to yield briefly
             # to let playback buffer drain before re‑enabling input.
             actual_duration = max(0.0, len(audio_pcm16) / SAMPLE_RATE)
-            pacing_pause = min(actual_duration * 0.10, 0.75)  # 10% of length, capped at 750ms
+            pacing_pause = min(
+                actual_duration * 0.10, 0.75
+            )  # 10% of length, capped at 750ms
             await asyncio.sleep(pacing_pause)
 
         except Exception as e:
@@ -745,10 +777,15 @@ class TTSService:
 
             if getattr(self.config, "bark_voice_preset", None):
                 audio_array = await loop.run_in_executor(
-                    None, lambda: generate_audio(text, history_prompt=self.config.bark_voice_preset)
+                    None,
+                    lambda: generate_audio(
+                        text, history_prompt=self.config.bark_voice_preset
+                    ),
                 )
             else:
-                audio_array = await loop.run_in_executor(None, lambda: generate_audio(text))
+                audio_array = await loop.run_in_executor(
+                    None, lambda: generate_audio(text)
+                )
 
             # Convert to numpy array with correct format
             # Bark returns float32, but we need int16 for compatibility

@@ -1,47 +1,47 @@
 # Default configuration for Voice Agent
 audio:
-  input_device: null  # Auto-detect
+  input_device: null # Auto-detect
   output_device: null # Auto-detect
   sample_rate: 16000
   chunk_size: 1024
 
   # VAD / speech detection tuning (adjusted for reduced sensitivity to brief transients like keyboard clicks)
-  vad_aggressiveness: 3          # 0-3 (higher = more aggressive filtering of noise)
-  min_speech_frames: 8           # Require more consecutive speech frames to confirm start
-  max_silence_frames: 30         # Shorter trailing silence to finish sooner after real speech
+  vad_aggressiveness: 3 # 0-3 (higher = more aggressive filtering of noise)
+  min_speech_frames: 8 # Require more consecutive speech frames to confirm start
+  max_silence_frames: 30 # Shorter trailing silence to finish sooner after real speech
   speech_detection_cooldown: 1.0 # Seconds after TTS before listening resumes
-  
+
 stt:
   model: "whisper-base"
   language: "auto"
   streaming: true
-  
+
 tts:
   # Select TTS engine: "bark" | "coqui" | "espeak" | "pyttsx3" | "auto"
-  engine: "bark"   # Switched to Bark for testing neural TTS performance/latency
+  engine: "bark" # Switched to Bark for testing neural TTS performance/latency
   voice: "default"
   speed: 1.0
 
   # Bark-specific (ignored by other engines):
   # Set a deterministic Bark voice preset (history prompt) to avoid random changes.
   # Examples (may vary by Bark release): v2/en_speaker_1, v2/en_speaker_6, v2/en_speaker_9
-  bark_voice_preset: v2/en_speaker_1  # Set to e.g. "v2/en_speaker_6" when using engine: bark
+  bark_voice_preset: v2/en_speaker_1 # Set to e.g. "v2/en_speaker_6" when using engine: bark
 
   # Latency tuning (applies primarily to Bark; harmless for others):
-  post_tts_cooldown: 0.3                # Short cooldown after playback (was 2.0s before optimization)
-  tts_cooldown_margin: 0.25             # Reserved for future fine‑grained pacing adjustments
+  post_tts_cooldown: 0.3 # Short cooldown after playback (was 2.0s before optimization)
+  tts_cooldown_margin: 0.25 # Reserved for future fine‑grained pacing adjustments
   enable_tts_buffer_double_clear: false # Set true only if you experience residual mic feedback
 # tts:
 #   engine: "bark"  # Using Bark for high-quality neural TTS
 #   voice: "default"
 #   speed: 1.0
-  
+
 llm:
   provider: "ollama"
   model: "mistral:7b"
   temperature: 0.7
   max_tokens: 2048
-  
+
 tools:
   enabled:
     - calculator
@@ -57,3 +57,15 @@ conversation:
 logging:
   level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# UI / TUI configuration
+ui:
+  mode: auto # auto | tui | cli
+  force_text_only: true # Skip audio / STT / TTS when running in TUI (pure text)
+  refresh_rate: 0.5 # Status / animation refresh interval (seconds)
+  max_messages: 500 # Chat scrollback limit
+  show_timestamps: true # Show message timestamps
+  color_scheme: default # Future: default | light | high_contrast
+  enable_animations: true # Allow ACTIVE blinking / subtle effects
+  enable_audio: false # Future hybrid mode (voice inside TUI)
+  keymap_overrides: {} # Example: {"f5": "clear_chat"}
