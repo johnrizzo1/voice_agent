@@ -114,6 +114,22 @@ class VoiceAgent:
                 self.config.tts, self.audio_manager, state_callback=self._state_callback
             )
             await self.tts_service.initialize()
+
+            # Wire barge-in / interruption between audio manager & TTS
+            try:
+                if self.audio_manager and self.tts_service:
+                    # When user speech detected during TTS, request interruption
+                    self.audio_manager.set_barge_in_callback(
+                        lambda: self.tts_service.request_interrupt()
+                    )
+                    # Audio playback checks this predicate each chunk
+                    self.audio_manager.set_interrupt_getter(
+                        lambda: bool(
+                            getattr(self.tts_service, "_interrupt_requested", False)
+                        )
+                    )
+            except Exception:
+                self.logger.debug("Failed wiring barge-in callbacks", exc_info=True)
         else:
             self.logger.info(
                 "Text-only mode: skipping audio / STT / TTS initialization"

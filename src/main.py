@@ -48,14 +48,19 @@ def _locate_default_config() -> Path:
 @click.option(
     "--no-audio",
     is_flag=True,
-    help="Disable audio input/output (text-only mode)",
+    help="Disable audio input/output (force text-only, even in TUI)",
+)
+@click.option(
+    "--cli",
+    is_flag=True,
+    help="Force classic CLI mode (disable TUI).",
 )
 @click.option(
     "--tui",
     is_flag=True,
-    help="Launch experimental Text User Interface (text-only interaction).",
+    help="(Deprecated) Explicitly launch Text UI (now default).",
 )
-def main(config: str | None, debug: bool, no_audio: bool, tui: bool):
+def main(config: str | None, debug: bool, no_audio: bool, cli: bool, tui: bool):
     """Start the Voice Agent."""
     if config:
         config_path = Path(config)
@@ -82,8 +87,14 @@ def main(config: str | None, debug: bool, no_audio: bool, tui: bool):
             agent_config.audio.input_device = None
             agent_config.audio.output_device = None
 
+        # Interface mode (default TUI unless --cli provided)
         if tui:
-            # Probe for required TUI dependencies without importing our module (avoids unused import)
+            click.echo("⚠️  '--tui' flag is deprecated (TUI is now default).")
+        if tui and cli:
+            click.echo("❌ Cannot specify both --tui and --cli.")
+            return
+        use_tui = not cli
+        if use_tui:
             try:
                 import importlib
 
@@ -91,21 +102,21 @@ def main(config: str | None, debug: bool, no_audio: bool, tui: bool):
                 importlib.import_module("rich")
             except ImportError as e:
                 click.echo(
-                    "❌ TUI dependencies not installed. Install with: pip install textual rich"
+                    "❌ TUI dependencies not installed. Falling back to CLI. Install with: pip install textual rich"
                 )
                 click.echo(f"Import error: {e}")
-                return
+                use_tui = False
 
-        agent = VoiceAgent(config=agent_config, text_only=bool(tui))
+        agent = VoiceAgent(config=agent_config)
 
         click.echo(f"Using config: {config_path}")
-        if tui:
-            click.echo("🖥️  Launching Voice Agent TUI (experimental)...")
-            click.echo(" - Audio loop disabled (text interaction only in this mode)")
-            click.echo(" - Type your queries in the input panel. Ctrl+C to exit.")
+        if use_tui:
+            click.echo("🖥️  Launching Voice Agent TUI...")
+            click.echo(" - Type or speak. Use 'Privacy Mode' voice command to pause.")
+            click.echo(" - Ctrl+Q to quit.")
             asyncio.run(_run_tui(agent))
         else:
-            click.echo("🎤 Voice Agent starting...")
+            click.echo("🎤 Voice Agent starting (CLI mode)...")
             click.echo("Press Ctrl+C to stop")
             asyncio.run(agent.start())
 

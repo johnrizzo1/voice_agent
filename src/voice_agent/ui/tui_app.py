@@ -1415,30 +1415,54 @@ class VoiceAgentTUI(App):
     @staticmethod
     def detect_voice_command(text: str) -> Optional[str]:
         """
-        Lightweight pattern matcher for spoken control phrases.
-        Returns a normalized command key or None.
+        Enhanced spoken control phrase detector with tolerance for fillers,
+        minor STT substitutions, and trailing or leading words.
 
-        Commands implemented (synonym sets):
-          - start_dictation:  "start dictation", "take a dictation", "begin dictation",
-                              "start recording", "start taking notes"
-          - end_dictation:    "end dictation", "stop dictation", "finish dictation",
-                              "send dictation", "dictation done"
-          - pause_dictation:  "pause dictation", "hold dictation"
-          - resume_dictation: "resume dictation", "continue dictation", "unpause dictation"
-          - cancel_dictation: "cancel dictation", "discard dictation", "abort dictation"
-          - privacy_on:       "privacy mode", "privacy mode on", "stop listening"
-          - privacy_off:      "privacy mode off", "resume listening"
+        Normalized command keys:
+          start_dictation, end_dictation, pause_dictation, resume_dictation,
+          cancel_dictation, privacy_on, privacy_off
         """
         if not text:
             return None
         norm = text.strip().lower()
-        for ch in [".", "!", "?"]:
+
+        # Strip basic punctuation
+        for ch in [".", "!", "?", ","]:
             norm = norm.replace(ch, "")
+        # Collapse multiple whitespace
+        while "  " in norm:
+            norm = norm.replace("  ", " ")
 
-        def in_any(candidates: List[str]) -> bool:
-            return any(norm == c or norm.endswith(c) for c in candidates)
+        # Common mis-hearings / substitutions -> canonical
+        corrections = {
+            "and dictation": "end dictation",
+            "in dictation": "end dictation",
+            "end the dictation": "end dictation",
+            "stop the dictation": "stop dictation",
+            "finish the dictation": "finish dictation",
+            "send the dictation": "send dictation",
+            "pause the dictation": "pause dictation",
+            "resume the dictation": "resume dictation",
+            "continue the dictation": "continue dictation",
+            "cancel the dictation": "cancel dictation",
+            "discard the dictation": "discard dictation",
+            "abort the dictation": "abort dictation",
+        }
+        norm = corrections.get(norm, norm)
 
-        if in_any(
+        def match(
+            candidates: List[str], allow_suffix: bool = True, allow_prefix: bool = True
+        ) -> bool:
+            for c in candidates:
+                if norm == c:
+                    return True
+                if allow_suffix and norm.endswith(c):
+                    return True
+                if allow_prefix and norm.startswith(c):
+                    return True
+            return False
+
+        if match(
             [
                 "start dictation",
                 "take a dictation",
@@ -1448,24 +1472,32 @@ class VoiceAgentTUI(App):
             ]
         ):
             return "start_dictation"
-        if in_any(
+
+        if match(
             [
                 "end dictation",
                 "stop dictation",
                 "finish dictation",
                 "send dictation",
                 "dictation done",
+                "end dictation now",
+                "stop dictation now",
+                "finish dictation now",
             ]
         ):
             return "end_dictation"
-        if in_any(
+
+        if match(
             [
                 "pause dictation",
                 "hold dictation",
-            ]
+            ],
+            allow_prefix=True,
+            allow_suffix=True,
         ):
             return "pause_dictation"
-        if in_any(
+
+        if match(
             [
                 "resume dictation",
                 "continue dictation",
@@ -1473,7 +1505,8 @@ class VoiceAgentTUI(App):
             ]
         ):
             return "resume_dictation"
-        if in_any(
+
+        if match(
             [
                 "cancel dictation",
                 "discard dictation",
@@ -1481,7 +1514,8 @@ class VoiceAgentTUI(App):
             ]
         ):
             return "cancel_dictation"
-        if in_any(
+
+        if match(
             [
                 "privacy mode",
                 "privacy mode on",
@@ -1489,13 +1523,15 @@ class VoiceAgentTUI(App):
             ]
         ):
             return "privacy_on"
-        if in_any(
+
+        if match(
             [
                 "privacy mode off",
                 "resume listening",
             ]
         ):
             return "privacy_off"
+
         return None
 
     async def handle_voice_command(self, command: str) -> bool:

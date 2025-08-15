@@ -133,11 +133,36 @@ class AudioManager:
         self.audio_callback: Optional[Callable] = None
         self._state_callback = state_callback
 
+        # Barge-in / interruption support
+        self._barge_in_callback: Optional[Callable[[], None]] = None
+        self._should_interrupt_playback: Optional[Callable[[], bool]] = None
+        self._barge_in_triggered: bool = False
+        self._interrupt_energy_frames: int = (
+            0  # successive high-energy frames while speaking
+        )
+
     def set_state_callback(
         self, cb: Optional[Callable[[str, str, Optional[str]], None]]
     ) -> None:
         """Set or replace the pipeline state callback."""
         self._state_callback = cb
+
+    # ---------------- Barge-in / interruption wiring ----------------
+    def set_barge_in_callback(self, cb: Optional[Callable[[], None]]) -> None:
+        """
+        Register a callback invoked when user speech is detected during TTS playback.
+        The callback should request interruption on the active TTS service.
+        """
+        self._barge_in_callback = cb
+
+    def set_interrupt_getter(self, cb: Optional[Callable[[], bool]]) -> None:
+        """
+        Register a predicate polled during audio playback to decide early stop.
+
+        Args:
+            cb: Callable returning True if current playback should be interrupted.
+        """
+        self._should_interrupt_playback = cb
 
     def _emit_state(
         self, component: str, state: str, message: Optional[str] = None
@@ -303,11 +328,37 @@ class AudioManager:
             self.input_buffer.append(in_data)
 
             # Call external callback if set
-            if self.audio_callback:
+            if callable(self.audio_callback):
                 try:
-                    self.audio_callback(in_data)
+                    self.audio_callback(in_data)  # type: ignore[call-arg]
                 except Exception as e:
                     self.logger.error(f"Error in audio callback: {e}")
+        else:
+            # While speaking, monitor for possible barge-in (user attempting to interrupt)
+            if self.is_speaking and self._barge_in_callback:
+                try:
+                    # Heuristic: sustained elevated input level while TTS is active
+                    # Use previously computed self.last_level (> ~0.28) for N consecutive callbacks
+                    if self.last_level > 0.28:
+                        self._interrupt_energy_frames += 1
+                    else:
+                        self._interrupt_energy_frames = 0
+                    if (
+                        not self._barge_in_triggered
+                        and self._interrupt_energy_frames >= 5
+                    ):
+                        self._barge_in_triggered = True
+                        self.logger.info(
+                            "Barge-in detected (user speech during TTS) – requesting interruption"
+                        )
+                        try:
+                            self._barge_in_callback()
+                        except Exception:
+                            self.logger.debug(
+                                "Error invoking barge-in callback", exc_info=True
+                            )
+                except Exception:
+                    self.logger.debug("Barge-in detection error", exc_info=True)
 
         return (None, pyaudio.paContinue)
 
@@ -504,11 +555,23 @@ class AudioManager:
             for i in range(0, len(audio_bytes), chunk_size):
                 chunk = audio_bytes[i : i + chunk_size]
                 self.output_stream.write(chunk)
+                # Yield to event loop so input callbacks & other tasks run
+                await asyncio.sleep(0)
+                # Early interruption check (barge-in / TTS stop)
+                if (
+                    self._should_interrupt_playback
+                    and self._should_interrupt_playback()
+                ):
+                    self.logger.info("Playback interrupted early by barge-in request")
+                    break
 
-            # Calculate proper delay based on audio length
-            duration = len(processed_audio) / self.config.sample_rate
-            await asyncio.sleep(max(0.1, duration + 0.2))  # Audio duration + buffer
-            self.logger.debug(f"Audio playback completed ({duration:.2f}s)")
+            # If not interrupted, allow buffer drain (short sleep proportional to remaining audio length)
+            if not (
+                self._should_interrupt_playback and self._should_interrupt_playback()
+            ):
+                duration = len(processed_audio) / self.config.sample_rate
+                await asyncio.sleep(max(0.05, min(0.25, duration * 0.05)))
+                self.logger.debug(f"Audio playback completed ({duration:.2f}s)")
 
         except Exception as e:
             self.logger.error(f"Error playing audio: {e}")
@@ -521,6 +584,9 @@ class AudioManager:
             self.last_speech_end_time = time.time()
             # Clear any residual audio that might have been captured during playback
             self.clear_input_buffer()
+            # Reset barge-in detection counters
+            self._barge_in_triggered = False
+            self._interrupt_energy_frames = 0
             self.logger.debug("Audio playback finished - input re-enabled")
 
     def start_recording(self) -> None:

@@ -88,6 +88,9 @@ class TTSService:
         # Audio settings
         self.sample_rate = 22050  # Default sample rate
 
+        # Interruption (barge-in) state
+        self._interrupt_requested: bool = False
+
     def _determine_backend(self) -> str:
         """Determine which TTS backend to use based on availability and config."""
         # Prefer high-quality offline TTS engines in order of quality
@@ -120,6 +123,26 @@ class TTSService:
                 self._state_callback("tts", state, message)
             except Exception:
                 self.logger.debug("TTS state callback error", exc_info=True)
+
+    # ---------------- Interruption (barge-in) API ----------------
+    def request_interrupt(self) -> None:
+        """
+        Request that any ongoing TTS playback be interrupted.
+
+        For pyttsx3 we attempt an engine.stop(); for streamed chunk playback
+        (Bark / Coqui / eSpeak via AudioManager) a polling hook in AudioManager
+        will terminate playback loop early.
+        """
+        if not self._interrupt_requested:
+            self.logger.info("TTS interruption requested (barge-in)")
+        self._interrupt_requested = True
+        if self.current_backend == "pyttsx3" and self.pyttsx3_engine:
+            try:
+                self.pyttsx3_engine.stop()
+            except Exception:
+                self.logger.debug(
+                    "pyttsx3 stop() failed during interruption", exc_info=True
+                )
 
     async def initialize(self) -> None:
         """Initialize the TTS service and load engines."""
@@ -306,63 +329,67 @@ class TTSService:
                 f"No TTS backend available for speech (current: {self.current_backend})"
             )
             self._emit_state("error", "no backend")
+        # Reset interruption flag after each speak invocation (so next response can play)
+        self._interrupt_requested = False
 
     async def _speak_pyttsx3(self, text: str) -> None:
-        """Generate and play speech using pyttsx3."""
+        """
+        Generate speech with pyttsx3 by saving to a temporary WAV, then stream
+        through AudioManager for unified interruption handling (barge‑in).
+        """
         if not self.pyttsx3_engine:
             self.logger.error("pyttsx3 engine not available")
             return
 
+        temp_file = Path("/tmp/pyttsx3_tts_output.wav")
         try:
-            # Set speaking state to prevent audio feedback
             if self.audio_manager:
                 self.audio_manager.set_speaking_state(True)
 
-            # Calculate estimated speech duration (rough estimate: ~150 words per minute)
-            word_count = len(text.split())
-            estimated_duration = max(
-                1.0, word_count / 2.5
-            )  # 150 WPM = ~2.5 words per second
-            self.logger.debug(
-                f"Estimated speech duration: {estimated_duration:.1f}s for {word_count} words"
-            )
-
-            # Use pyttsx3 to speak directly
+            # Synthesize to file in executor (blocking operation)
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
                 None,
                 lambda: (
-                    self.pyttsx3_engine.say(text),
+                    self.pyttsx3_engine.save_to_file(text, str(temp_file)),
                     self.pyttsx3_engine.runAndWait(),
                 ),
             )
 
-            # Add extra delay based on estimated duration to ensure audio completely finishes
-            # Much longer delay to prevent feedback
-            extra_delay = max(
-                2.0, estimated_duration * 1.0
-            )  # 100% of estimated duration + minimum 2s
-            self.logger.debug(
-                f"Adding extra delay of {extra_delay:.1f}s to ensure audio completion"
-            )
-            await asyncio.sleep(extra_delay)
+            if not temp_file.exists():
+                self.logger.error("pyttsx3 did not produce output file")
+                return
+
+            # Load audio
+            audio_data = await self._load_audio_file(temp_file)
+            if audio_data.size == 0:
+                self.logger.error("pyttsx3 produced empty audio")
+                return
+
+            # Stream via AudioManager with chunk‑level interruption polling
+            if self.audio_manager:
+                await self.audio_manager.play_audio(
+                    audio_data, sample_rate=self.sample_rate
+                )
+            else:
+                # Fallback simulate
+                duration = len(audio_data) / self.sample_rate
+                await asyncio.sleep(duration)
 
         except Exception as e:
-            self.logger.error(f"pyttsx3 synthesis error: {e}")
+            self.logger.error(f"pyttsx3 synthesis/playback error: {e}")
         finally:
-            # Add a longer delay before re-enabling audio input to prevent feedback
-            await asyncio.sleep(2.0)
-
-            # Clear speaking state to re-enable input
+            try:
+                if temp_file.exists():
+                    temp_file.unlink()
+            except Exception:
+                pass
+            # Minimal post‑playback cooldown (short, non‑blocking for barge‑in)
+            await asyncio.sleep(0.15)
             if self.audio_manager:
-                # Clear buffer multiple times to ensure no residual audio
-                self.audio_manager.clear_input_buffer()
-                await asyncio.sleep(0.5)
                 self.audio_manager.clear_input_buffer()
                 self.audio_manager.set_speaking_state(False)
-                self.logger.debug(
-                    "Speaking state cleared - audio input re-enabled after extended delay"
-                )
+            self._interrupt_requested = False
 
     async def _speak_bark(self, text: str) -> None:
         """Generate and play speech using Bark TTS."""
@@ -474,6 +501,7 @@ class TTSService:
                 self.logger.debug(
                     "Speaking state cleared - audio input re-enabled after Bark TTS"
                 )
+            self._interrupt_requested = False
 
     async def _speak_coqui(self, text: str) -> None:
         """Generate and play speech using Coqui TTS."""
@@ -547,6 +575,7 @@ class TTSService:
                 self.logger.debug(
                     "Speaking state cleared - audio input re-enabled after Coqui TTS"
                 )
+            self._interrupt_requested = False
 
     async def _speak_espeak(self, text: str) -> None:
         """Generate and play speech using eSpeak-NG."""
@@ -634,6 +663,7 @@ class TTSService:
                 self.logger.debug(
                     "Speaking state cleared - audio input re-enabled after eSpeak TTS"
                 )
+            self._interrupt_requested = False
 
     async def synthesize(self, text: str) -> Optional[np.ndarray]:
         """
