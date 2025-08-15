@@ -737,6 +737,14 @@ class VoiceAgentTUI(App):
         self._dictation_preview_msg: Optional[ChatMessage] = None
         self._dictation_last_update: float = 0.0
 
+        # Privacy / continuous always-on voice listening
+        self._privacy_mode: bool = (
+            False  # When True: ignore microphone input & suppress transcriptions
+        )
+        self._continuous_listen_task: Optional[asyncio.Task] = (
+            None  # Background passive listening loop
+        )
+
         # Initialize baseline READY states for text-only minimal components
         self._pipeline_status.llm = ComponentState.READY
         self._pipeline_status.audio_input = ComponentState.DISABLED
@@ -799,6 +807,23 @@ class VoiceAgentTUI(App):
     async def on_mount(self) -> None:  # type: ignore
         # Start background task to poll agent messages (if queue-based)
         self._bg_tasks.append(asyncio.create_task(self._consume_agent_queue()))
+
+        # Attempt to activate audio pipeline & start continuous background listening
+        try:
+            await self._agent_adapter.ensure_audio_pipeline()  # type: ignore
+            if self._continuous_listen_task is None:
+                self._continuous_listen_task = asyncio.create_task(
+                    self._continuous_listen_loop()
+                )
+        except Exception as e:
+            self.chat.add_message(
+                ChatMessage(
+                    role="system",
+                    content=f"(Failed to start continuous listening: {e})",
+                    status="error",
+                )
+            )
+
         # Set initial focus to input field for immediate typing
         try:
             await self.set_focus(self.input_panel.input)
@@ -842,6 +867,8 @@ class VoiceAgentTUI(App):
     async def on_unmount(self) -> None:  # type: ignore
         for t in self._bg_tasks:
             t.cancel()
+        if self._continuous_listen_task:
+            self._continuous_listen_task.cancel()
         await asyncio.gather(*self._bg_tasks, return_exceptions=True)
 
     # ---------------------- Public API -----------------------
@@ -870,6 +897,7 @@ class VoiceAgentTUI(App):
             "F4: Tool results panel\n"
             f"{voice_line}"
             "F6: Dictation mode start/stop\n"
+            "Privacy Voice Commands: 'Privacy Mode' (suspend), 'Privacy Mode Off' (resume)\n"
             "F7: Toggle timestamps\n"
             "F8: Cycle color scheme\n"
             "F9: Toggle animations\n"
@@ -893,9 +921,11 @@ class VoiceAgentTUI(App):
         dictation = (
             "active" if getattr(self, "_dictation_mode_active", False) else "inactive"
         )
+        privacy = "ON" if getattr(self, "_privacy_mode", False) else "off"
         return (
             "[bold underline]Settings[/]\n"
             f"Dictation Mode (F6): {dictation}\n"
+            f"Privacy Mode (voice command): {privacy}\n"
             f"Timestamps (F7): {ts}\n"
             f"Color Scheme (F8): {cs}\n"
             f"Animations (F9): {anim}\n"
@@ -1396,11 +1426,12 @@ class VoiceAgentTUI(App):
           - pause_dictation:  "pause dictation", "hold dictation"
           - resume_dictation: "resume dictation", "continue dictation", "unpause dictation"
           - cancel_dictation: "cancel dictation", "discard dictation", "abort dictation"
+          - privacy_on:       "privacy mode", "privacy mode on", "stop listening"
+          - privacy_off:      "privacy mode off", "resume listening"
         """
         if not text:
             return None
         norm = text.strip().lower()
-        # Remove trivial punctuation
         for ch in [".", "!", "?"]:
             norm = norm.replace(ch, "")
 
@@ -1450,6 +1481,21 @@ class VoiceAgentTUI(App):
             ]
         ):
             return "cancel_dictation"
+        if in_any(
+            [
+                "privacy mode",
+                "privacy mode on",
+                "stop listening",
+            ]
+        ):
+            return "privacy_on"
+        if in_any(
+            [
+                "privacy mode off",
+                "resume listening",
+            ]
+        ):
+            return "privacy_off"
         return None
 
     async def handle_voice_command(self, command: str) -> bool:
@@ -1459,21 +1505,27 @@ class VoiceAgentTUI(App):
         """
         try:
             if command == "start_dictation":
+                if self._privacy_mode:
+                    self.chat.add_message(
+                        ChatMessage(
+                            role="system",
+                            content="(Cannot start dictation while Privacy Mode is ON)",
+                        )
+                    )
+                    return True
                 if self._dictation_mode_active and not self._dictation_paused:
                     self.chat.add_message(
                         ChatMessage(role="system", content="(Dictation already active)")
                     )
                     return True
                 if self._dictation_mode_active and self._dictation_paused:
-                    # Resume path
                     await self._resume_dictation()
                     return True
-                # Fresh start
                 self._start_dictation()
                 self.chat.add_message(
                     ChatMessage(
                         role="system",
-                        content="(Dictation mode started via voice command – speak freely, say 'End dictation' when finished)",
+                        content="(Dictation mode started – speak freely, say 'End dictation' when finished)",
                     )
                 )
                 if self.settings_panel and self.settings_panel.display:  # type: ignore
@@ -1529,10 +1581,53 @@ class VoiceAgentTUI(App):
                     return True
                 await self._stop_dictation(finalize=False)
                 return True
+            elif command == "privacy_on":
+                if not self._privacy_mode:
+                    # Cancel any dictation in progress
+                    if self._dictation_mode_active:
+                        await self._stop_dictation(finalize=False)
+                    self._privacy_mode = True
+                    self.chat.add_message(
+                        ChatMessage(
+                            role="system",
+                            content="(Privacy Mode ON – audio ignored until 'Privacy Mode Off')",
+                        )
+                    )
+                    if self.settings_panel and self.settings_panel.display:  # type: ignore
+                        self.settings_panel.update(self._settings_text())  # type: ignore
+                else:
+                    self.chat.add_message(
+                        ChatMessage(role="system", content="(Privacy Mode already ON)")
+                    )
+                return True
+            elif command == "privacy_off":
+                if self._privacy_mode:
+                    self._privacy_mode = False
+                    self.chat.add_message(
+                        ChatMessage(
+                            role="system",
+                            content="(Privacy Mode OFF – resuming active listening)",
+                        )
+                    )
+                    if (
+                        self._continuous_listen_task is None
+                    ) or self._continuous_listen_task.done():
+                        self._continuous_listen_task = asyncio.create_task(
+                            self._continuous_listen_loop()
+                        )
+                    if self.settings_panel and self.settings_panel.display:  # type: ignore
+                        self.settings_panel.update(self._settings_text())  # type: ignore
+                else:
+                    self.chat.add_message(
+                        ChatMessage(role="system", content="(Privacy Mode already off)")
+                    )
+                return True
         except Exception as e:
             self.chat.add_message(
                 ChatMessage(
-                    role="system", content=f"(Voice command error: {e})", status="error"
+                    role="system",
+                    content=f"(Voice command error: {e})",
+                    status="error",
                 )
             )
             return True
@@ -1693,7 +1788,7 @@ class VoiceAgentTUI(App):
                 if not text:
                     continue
 
-                # In-dictation voice command handling (pause / resume / end / cancel)
+                # In-dictation voice command handling (pause / resume / end / cancel / privacy)
                 cmd = self.detect_voice_command(text)
                 if cmd == "pause_dictation":
                     await self._pause_dictation()
@@ -1707,6 +1802,13 @@ class VoiceAgentTUI(App):
                 if cmd in ("start_dictation", "resume_dictation"):
                     # Redundant inside active (non-paused) session
                     continue
+                if cmd in ("privacy_on", "privacy_off"):
+                    handled = await self.handle_voice_command(cmd)
+                    if self._privacy_mode:
+                        # Privacy ON cancels dictation already
+                        break
+                    if handled:
+                        continue
 
                 self._dictation_segments.append(text)
                 if self._dictation_preview_msg:
@@ -1725,6 +1827,87 @@ class VoiceAgentTUI(App):
                     )
                 )
                 await asyncio.sleep(0.3)
+                continue
+
+    async def _continuous_listen_loop(self) -> None:
+        """
+        Background continuous listening loop:
+          - Runs whenever audio pipeline active & not in dictation
+          - Skips processing while privacy mode is ON
+          - Performs VAD-gated capture → STT → voice command dispatch
+          - Normal utterances go directly to LLM + TTS (hands‑free mode)
+        """
+        va = getattr(self._agent_adapter, "voice_agent", None)
+        if not va:
+            return
+        while True:
+            try:
+                # Respect privacy mode
+                if self._privacy_mode:
+                    await asyncio.sleep(0.3)
+                    continue
+                # Skip while dictation owns microphone
+                if self._dictation_mode_active:
+                    await asyncio.sleep(0.1)
+                    continue
+
+                audio = await va.audio_manager.listen()  # type: ignore
+                if audio is None:
+                    continue
+
+                t_stt = time.monotonic()
+                text = await va.stt_service.transcribe(audio)  # type: ignore
+                self._record_metric("stt", (time.monotonic() - t_stt) * 1000.0)
+                text = (text or "").strip()
+                if not text:
+                    continue
+
+                # Voice command interception (privacy / dictation)
+                cmd = self.detect_voice_command(text)
+                if cmd:
+                    handled = await self.handle_voice_command(cmd)
+                    if handled:
+                        continue
+
+                # State may have changed after command handling
+                if self._privacy_mode or self._dictation_mode_active:
+                    continue
+
+                # Normal conversational turn
+                self.chat.add_message(ChatMessage(role="user", content=text))
+                try:
+                    t_llm = time.monotonic()
+                    response = await va.llm_service.generate_response(  # type: ignore
+                        text, va.conversation_history, va.tool_executor  # type: ignore
+                    )
+                    self._record_metric("llm", (time.monotonic() - t_llm) * 1000.0)
+                    self.chat.add_message(ChatMessage(role="agent", content=response))
+                    if getattr(va, "tts_service", None):
+                        t_tts = time.monotonic()
+                        await va.tts_service.speak(response)  # type: ignore
+                        self._record_metric("tts", (time.monotonic() - t_tts) * 1000.0)
+                    if hasattr(va, "_update_history"):
+                        va._update_history(text, response)  # type: ignore
+                except Exception as convo_err:
+                    self.chat.add_message(
+                        ChatMessage(
+                            role="system",
+                            content=f"(Conversation error: {convo_err})",
+                            status="error",
+                        )
+                    )
+                    await asyncio.sleep(0.25)
+            except asyncio.CancelledError:
+                break
+            except Exception as loop_err:
+                self.chat.add_message(
+                    ChatMessage(
+                        role="system",
+                        content=f"(Listen loop error: {loop_err})",
+                        status="error",
+                    )
+                )
+                await asyncio.sleep(0.5)
                 continue
 
 

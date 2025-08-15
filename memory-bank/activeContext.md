@@ -4,6 +4,7 @@ This file tracks the project's current status, including recent changes, current
 
 ## Current Focus
 
+2025-08-15 04:08:45 - **Current Focus Update**: Implemented always-on passive listening with voice-controlled Privacy Mode (speech suspension) and integrated privacy/dictation command handling into TUI.  
 2025-08-15 03:15:05 - **Current Focus Update**: Added first iteration of voice command layer enabling spoken control phrases ("Start dictation", "End dictation", "Cancel dictation", "Pause dictation") for hands-free long-form input management.
 2025-08-14 18:19:44 - Successfully resolved critical Bark TTS initialization error caused by PyTorch 2.6 compatibility issues. The voice agent is now fully operational with all TTS backends working correctly.
 

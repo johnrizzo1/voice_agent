@@ -503,3 +503,49 @@ Key considerations:
 5. Internationalization: expose command phrase lists via configuration for localization.
 
 ---
+
+## Decision
+
+2025-08-15 04:08:30 - **Always-On Continuous Listening & Privacy Mode Voice Commands**
+
+## Rationale
+
+Previously, STT/TTS pipeline activation required explicit key presses (F5 push-to-talk / F6 dictation). For a more natural, hands‑free experience the agent should begin listening automatically at TUI startup and remain passively available. However, continuous capture raises privacy concerns; users need an immediate, low‑latency, fully local method to suspend all audio processing without touching the keyboard. Introducing a simple “Privacy Mode” voice toggle provides an intuitive safeguard.
+
+## Implementation Details
+
+- Added continuous background listener task started during [`VoiceAgentTUI.on_mount()`](src/voice_agent/ui/tui_app.py:803) after lazy pipeline activation.
+- Introduced internal flags / tasks:
+  - `_privacy_mode: bool` – suppresses microphone processing (no STT, no dictation, no LLM, no TTS) while True.
+  - `_continuous_listen_task: asyncio.Task` – passive always-on loop handling VAD → STT → command detection → conversation.
+- Extended voice command detector [`detect_voice_command()`](src/voice_agent/ui/tui_app.py:1406) with:
+  - `privacy_on`: (“privacy mode”, “privacy mode on”, “stop listening”)
+  - `privacy_off`: (“privacy mode off”, “resume listening”)
+- Added handling branches inside [`handle_voice_command()`](src/voice_agent/ui/tui_app.py:1478) to toggle privacy state; enabling privacy cancels any active dictation.
+- Implemented `_continuous_listen_loop()` (appended near [`_dictation_loop()`](src/voice_agent/ui/tui_app.py:1736)) performing:
+  1. Skip if `_privacy_mode` or dictation active.
+  2. `audio_manager.listen()` (VAD gated) → STT transcription.
+  3. Voice command interception (dictation / privacy).
+  4. Normal utterance → LLM generation → optional TTS playback → history update.
+- Updated help & settings UI text via `_help_text()` and `_settings_text()` to surface privacy commands and current mode status.
+- Dictation loop updated to recognize privacy commands mid-session (auto-cancels if “Privacy Mode” spoken).
+- Push‑to‑talk capture now aborts gracefully when privacy mode is active (system notice only).
+
+## Implications
+
+- User gains immediate hands‑free conversational flow without manual activation friction.
+- Clear, local, deterministic privacy control (no cloud calls, simple phrase set) reduces risk of unintended transcription.
+- Slight increase in idle CPU usage due to passive loop & periodic VAD guarded listens, but mitigated by existing VAD gating & early returns.
+- Added command vocabulary marginally increases false positive surface; mitigated by full-phrase / suffix matching strategy.
+- Architectural seam established for future wake‑word or hotword gating (could precede continuous loop).
+
+## Follow-up
+
+1. Optional configurable hotword (“computer,”) prefix to reduce accidental privacy toggles in normal speech.
+2. Visual indicator (e.g., STATUS BAR badge or color shift) when Privacy Mode is ON.
+3. Metrics / counters for time spent in privacy vs active listening.
+4. Config exposure (ui.privacy_startup: on/off) to allow default privacy-on launch.
+5. Unit tests: command detection (privacy_on/off), loop suppression during privacy, dictation cancellation on privacy activation.
+6. Potential low-power / duty-cycle listening (adaptive sleep intervals) when in long idle periods.
+
+---
