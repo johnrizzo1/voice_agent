@@ -509,8 +509,8 @@ class AudioManager:
             samples = np.frombuffer(frame_20ms, dtype=np.int16)
             # Root mean square amplitude
             rms = np.sqrt(np.mean(samples.astype(np.float32) ** 2))
-            # Threshold (empirical): ignore frames with rms below ~250 (very quiet)
-            if rms < 250:
+            # Threshold (empirical): ignore frames with rms below ~800 (filters keyboard clicks & low ambient noise)
+            if rms < 800:
                 return False
 
             return self.vad.is_speech(frame_20ms, self.config.sample_rate)

@@ -340,13 +340,21 @@ class ChatLog(ScrollView):
     Respects UI configuration for timestamps and color scheme.
     """
 
+    # Make the chat log focusable and scrollable
+    can_focus = True
+
     def __init__(
         self,
         max_messages: int = 200,
         show_timestamps: bool = True,
         color_scheme: str = "default",
     ):
+        # Initialize ScrollView with explicit scrolling enabled
         super().__init__()
+
+        # Simplified approach - let ScrollView handle its own configuration
+        # The previous approach was interfering with Textual's widget system
+
         self.max_messages = max_messages
         self._messages: Deque[ChatMessage] = deque(maxlen=max_messages)
         self._show_timestamps = show_timestamps
@@ -361,21 +369,82 @@ class ChatLog(ScrollView):
         self._match_positions: List[int] = []
         self._current_match_index: int = -1
 
-        # Manual scroll state (number of lines user has scrolled back; 0 = bottom)
-        self._line_offset: int = 0
-        # When user scrolls up, we freeze auto-scroll until they return to bottom
-        self._user_scrolled: bool = False
+        # Simplified: No manual scroll state tracking for now
+        # Just focus on auto-scroll to bottom for new messages
 
     def add_message(self, msg: ChatMessage) -> None:
         self._messages.append(msg)
         self._maybe_prune()
         self.refresh(layout=True)
-        # Auto-follow tail after the refresh if user has not manually scrolled.
-        if not getattr(self, "_user_scrolled", False):
+
+        # Simplified: Always auto-scroll to bottom for new messages
+        # Debug logging to validate scroll behavior
+        try:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.debug(
+                f"ChatLog.add_message: attempting auto-scroll, has_scroll_end={hasattr(self, 'scroll_end')}"
+            )
+        except Exception:
+            pass
+
+        # Always scroll to bottom - no user scroll detection for now
+        try:
+            if hasattr(self, "scroll_end"):
+                # Try multiple approaches to ensure scrolling works
+                import asyncio
+
+                asyncio.create_task(self._simple_auto_scroll())
+                try:
+                    import logging
+
+                    logging.getLogger(__name__).debug(
+                        "ChatLog: scheduled simple auto-scroll task"
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
             try:
-                if hasattr(self, "scroll_end"):
-                    # Defer until after layout so ScrollView knows new virtual size.
-                    self.call_after_refresh(lambda: self.scroll_end(animate=False))  # type: ignore
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    f"ChatLog: auto-scroll scheduling failed: {e}"
+                )
+            except Exception:
+                pass
+
+    async def _simple_auto_scroll(self) -> None:
+        """Simple auto-scroll to bottom - always scroll when new messages arrive."""
+        try:
+            # Small delay to allow layout to complete
+            await asyncio.sleep(0.1)
+            if hasattr(self, "scroll_end"):
+                self.scroll_end(animate=False)  # type: ignore
+                try:
+                    import logging
+
+                    logging.getLogger(__name__).debug(
+                        "ChatLog: simple auto-scroll executed successfully"
+                    )
+                except Exception:
+                    pass
+            else:
+                try:
+                    import logging
+
+                    logging.getLogger(__name__).debug(
+                        "ChatLog: scroll_end method not available"
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    f"ChatLog: simple auto-scroll failed: {e}"
+                )
             except Exception:
                 pass
 
@@ -487,6 +556,215 @@ class ChatLog(ScrollView):
             full.pop()
 
         return "\n".join(full)
+
+    # Remove problematic method overrides that interfere with Textual's widget system
+    # These method overrides were causing 'bool' object has no attribute 'post_message' errors
+
+    def force_scroll_down(self, lines: int = 1) -> bool:  # type: ignore
+        """Force scroll down by manipulating scroll position directly."""
+        try:
+            import logging
+
+            logger = logging.getLogger(__name__)
+
+            current_y = getattr(self, "scroll_y", 0)
+            max_y = getattr(self, "max_scroll_y", 0)
+            new_y = min(current_y + lines, max_y)
+
+            logger.debug(
+                f"ChatLog.force_scroll_down: {current_y} -> {new_y} (max: {max_y})"
+            )
+
+            if hasattr(self, "scroll_y"):
+                self.scroll_y = new_y  # type: ignore
+                self.refresh(repaint=True, layout=True)
+                logger.debug(f"ChatLog.force_scroll_down: position set and refreshed")
+                return True
+            else:
+                logger.debug("ChatLog.force_scroll_down: no scroll_y attribute")
+                return False
+        except Exception as e:
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    f"ChatLog.force_scroll_down error: {e}"
+                )
+            except Exception:
+                pass
+            return False
+
+    def force_scroll_up(self, lines: int = 1) -> bool:  # type: ignore
+        """Force scroll up by manipulating scroll position directly."""
+        try:
+            import logging
+
+            logger = logging.getLogger(__name__)
+
+            current_y = getattr(self, "scroll_y", 0)
+            new_y = max(current_y - lines, 0)
+
+            logger.debug(f"ChatLog.force_scroll_up: {current_y} -> {new_y}")
+
+            if hasattr(self, "scroll_y"):
+                self.scroll_y = new_y  # type: ignore
+                self.refresh(repaint=True, layout=True)
+                logger.debug(f"ChatLog.force_scroll_up: position set and refreshed")
+                return True
+            else:
+                logger.debug("ChatLog.force_scroll_up: no scroll_y attribute")
+                return False
+        except Exception as e:
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug(f"ChatLog.force_scroll_up error: {e}")
+            except Exception:
+                pass
+            return False
+
+    async def on_key(self, event: events.Key) -> None:  # type: ignore
+        """Handle key events when chat log is focused - let app handle scrolling."""
+        try:
+            # Debug logging for key events but don't handle scrolling here
+            # Let the main app handle all scrolling when this widget is focused
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    f"ChatLog.on_key: key={event.key}, delegating to app"
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug(f"ChatLog key handling error: {e}")
+            except Exception:
+                pass
+
+    async def _scroll_up_lines(self, lines: int = 3) -> None:
+        """Scroll up by specified number of lines."""
+        try:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.debug(f"ChatLog._scroll_up_lines called with {lines} lines")
+
+            # Try multiple scroll methods
+            if hasattr(self, "scroll_relative"):
+                logger.debug("Using scroll_relative method")
+                self.scroll_relative(y=-lines)  # type: ignore
+            elif hasattr(self, "scroll_up"):
+                logger.debug("Using scroll_up method")
+                self.scroll_up(lines)  # type: ignore
+            else:
+                logger.debug("No scroll methods available")
+
+            logger.debug(f"ChatLog scrolled up {lines} lines successfully")
+        except Exception as e:
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    f"ChatLog._scroll_up_lines error: {e}"
+                )
+            except Exception:
+                pass
+
+    async def _scroll_down_lines(self, lines: int = 3) -> None:
+        """Scroll down by specified number of lines."""
+        try:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.debug(f"ChatLog._scroll_down_lines called with {lines} lines")
+
+            # Try multiple scroll methods
+            if hasattr(self, "scroll_relative"):
+                logger.debug("Using scroll_relative method")
+                self.scroll_relative(y=lines)  # type: ignore
+            elif hasattr(self, "scroll_down"):
+                logger.debug("Using scroll_down method")
+                self.scroll_down(lines)  # type: ignore
+            else:
+                logger.debug("No scroll methods available")
+
+            logger.debug(f"ChatLog scrolled down {lines} lines successfully")
+        except Exception as e:
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    f"ChatLog._scroll_down_lines error: {e}"
+                )
+            except Exception:
+                pass
+
+    async def _scroll_up_page(self) -> None:
+        """Scroll up by one page."""
+        try:
+            height = getattr(self.size, "height", 10) - 2
+            if hasattr(self, "scroll_relative"):
+                self.scroll_relative(y=-height)  # type: ignore
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    f"ChatLog scrolled up one page ({height} lines)"
+                )
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    async def _scroll_down_page(self) -> None:
+        """Scroll down by one page."""
+        try:
+            height = getattr(self.size, "height", 10) - 2
+            if hasattr(self, "scroll_relative"):
+                self.scroll_relative(y=height)  # type: ignore
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    f"ChatLog scrolled down one page ({height} lines)"
+                )
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    async def _scroll_to_top(self) -> None:
+        """Scroll to the very top."""
+        try:
+            if hasattr(self, "scroll_to"):
+                self.scroll_to(y=0)  # type: ignore
+            elif hasattr(self, "scroll_relative"):
+                self.scroll_relative(y=-1000000)  # type: ignore
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug("ChatLog scrolled to top")
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    async def _scroll_to_bottom(self) -> None:
+        """Scroll to the very bottom."""
+        try:
+            if hasattr(self, "scroll_end"):
+                self.scroll_end(animate=False)  # type: ignore
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug("ChatLog scrolled to bottom")
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     # ----- Explicit scroll helpers (improve compatibility across Textual versions) -----
     def scroll_up(self, amount: int = 10) -> None:  # type: ignore
@@ -632,9 +910,6 @@ class InputPanel(Horizontal):
                 method = mapping.get(event.key)
                 if method and hasattr(self.app, method):  # type: ignore
                     asyncio.create_task(getattr(self.app, method)())  # type: ignore
-                    # Mark user scrolled so auto-scroll pauses
-                    if hasattr(self.app, "chat"):
-                        setattr(self.app.chat, "_user_scrolled", True)  # type: ignore
             except Exception:
                 pass
 
@@ -666,26 +941,34 @@ class VoiceAgentTUI(App):
 
     #input_panel {
         dock: bottom;
-        height: 3;
+        height: 5;
         background: $surface;
+        border: solid $primary;
+    }
+
+    #input_panel:focus-within {
+        border: solid $accent;
+        background: $surface-lighten-1;
     }
 
     #chat_log {
         height: 1fr;
         overflow: auto;
-        border: solid;
+        border: solid $primary;
         padding: 0 1;
+    }
+
+    #chat_log:focus {
+        border: solid $accent;
+        background: $surface-lighten-1;
     }
     """
 
     BINDINGS = [
         ("ctrl+q", "action_quit_app", "Quit"),
-        ("tab", "focus_input", "Focus Input"),
-        ("f1", "toggle_help", "Help"),
-        ("f2", "toggle_settings", "Settings"),
-        ("f3", "toggle_debug", "Debug"),
-        ("f4", "toggle_tool_panel", "Tools"),
+        ("tab", "cycle_focus", "Cycle Focus"),
         ("f5", "push_to_talk", "Voice"),
+        ("f6", "toggle_dictation", "Dictation"),
         ("ctrl+f", "search_chat", "Search"),
         ("ctrl+n", "search_next", "Next Match"),
         ("ctrl+p", "search_prev", "Prev Match"),
@@ -696,14 +979,10 @@ class VoiceAgentTUI(App):
         ("home", "scroll_chat_top", "Scroll Top"),
         ("end", "scroll_chat_bottom", "Scroll Bottom"),
         ("ctrl+l", "clear_chat", "Clear Chat"),
-        ("f6", "toggle_dictation", "Dictation"),
-        ("f7", "toggle_timestamps", "Timestamps"),
-        ("f8", "cycle_colors", "Color Scheme"),
-        ("f9", "toggle_animations", "Animations"),
         ("f10", "export_chat", "Export Chat"),
         ("f11", "export_logs", "Export Logs"),
-        ("f12", "toggle_metrics_panel", "Metrics"),
         ("ctrl+shift+l", "clear_logs", "Clear Logs"),
+        ("ctrl+t", "prefix_toggle", "Toggle Menu"),
     ]
 
     def __init__(
@@ -769,10 +1048,15 @@ class VoiceAgentTUI(App):
 
         self._log_buffer: Deque[str] = deque(maxlen=200)
         # Install TUI log capture handler only in debug mode (root logger DEBUG enabled)
+        # BUT skip if file logging is already configured to avoid cluttering TUI
         try:
             import logging as _logging
+            import os
 
-            if _logging.getLogger().isEnabledFor(_logging.DEBUG):
+            if (
+                _logging.getLogger().isEnabledFor(_logging.DEBUG)
+                and os.environ.get("VOICE_AGENT_DEBUG_FILE_LOGGING") != "1"
+            ):
                 self._install_logging_hook()
         except Exception:
             pass
@@ -794,6 +1078,10 @@ class VoiceAgentTUI(App):
         self._continuous_listen_task: Optional[asyncio.Task] = (
             None  # Background passive listening loop
         )
+
+        # Toggle menu state (Ctrl+T prefix key system)
+        self._toggle_mode: bool = False
+        self._toggle_timeout_task: Optional[asyncio.Task] = None
 
         # Initialize baseline READY states for text-only minimal components
         self._pipeline_status.llm = ComponentState.READY
@@ -877,6 +1165,12 @@ class VoiceAgentTUI(App):
         # Set initial focus to input field for immediate typing
         try:
             await self.set_focus(self.input_panel.input)
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug("Initial focus set to input field")
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -904,7 +1198,38 @@ class VoiceAgentTUI(App):
         # Send to agent
         asyncio.create_task(self._agent_adapter.handle_user_text(user_text))
 
+    async def action_cycle_focus(self) -> None:  # type: ignore
+        """Cycle focus between chat log and input field."""
+        try:
+            current_focus = self.focused
+            if current_focus == self.chat:
+                # Currently focused on chat, switch to input
+                await self.set_focus(self.input_panel.input)
+                try:
+                    import logging
+
+                    logging.getLogger(__name__).debug("Focus cycled to input field")
+                except Exception:
+                    pass
+            else:
+                # Currently focused on input (or nowhere), switch to chat
+                await self.set_focus(self.chat)
+                try:
+                    import logging
+
+                    logging.getLogger(__name__).debug("Focus cycled to chat log")
+                except Exception:
+                    pass
+        except Exception as e:
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug(f"Focus cycling failed: {e}")
+            except Exception:
+                pass
+
     async def action_focus_input(self) -> None:  # type: ignore
+        """Legacy focus input action - now just cycles to input."""
         await self.set_focus(self.input_panel.input)
 
     async def action_clear_chat(self) -> None:  # type: ignore
@@ -923,7 +1248,13 @@ class VoiceAgentTUI(App):
 
     # ---------------------- Public API -----------------------
 
-    def push_agent_message(self, content: str, status: str = "complete") -> None:
+    def push_agent_message(
+        self,
+        content: str,
+        status: Literal[
+            "sending", "sent", "processing", "complete", "error"
+        ] = "complete",
+    ) -> None:
         self.chat.add_message(ChatMessage(role="agent", content=content, status=status))
         if self._is_tool_block(content):
             self._tool_messages.append(content)
@@ -939,24 +1270,22 @@ class VoiceAgentTUI(App):
             if voice_active
             else "F5: Activate audio pipeline (then push-to-talk)\n"
         )
+        toggle_indicator = " [bold yellow](Toggle Mode)[/]" if self._toggle_mode else ""
         return (
             "[bold underline]Help & Shortcuts[/]\n"
-            "F1: Toggle this help\n"
-            "F2: Settings panel\n"
-            "F3: Debug / logs\n"
-            "F4: Tool results panel\n"
+            f"Ctrl+T: Toggle menu{toggle_indicator}\n"
+            "  Ctrl+S = Settings, Ctrl+D = Debug, Ctrl+T = Tool results, Ctrl+C = Color scheme\n"
+            "  Ctrl+I = Timestamps, Ctrl+A = Animations, Ctrl+M = Metrics, Ctrl+R = Privacy mode\n"
+            "  Ctrl+X = TTS toggle\n"
             f"{voice_line}"
             "F6: Dictation mode start/stop\n"
             "Privacy Voice Commands: 'Privacy Mode' (suspend), 'Privacy Mode Off' (resume)\n"
-            "F7: Toggle timestamps\n"
-            "F8: Cycle color scheme\n"
-            "F9: Toggle animations\n"
             "F10: Export chat\n"
             "F11: Export logs\n"
-            "F12: Metrics panel\n"
             "PageUp/PageDown: Scroll chat history; Home: Top; End: Bottom\n"
             "Ctrl+Shift+L: Clear logs\n"
-            "Tab: Focus input\n"
+            "Tab: Cycle focus between chat and input\n"
+            "When chat focused: Up/Down/K/J = scroll lines, PageUp/PageDown = scroll pages, Home/End = scroll to top/bottom\n"
             "Ctrl+L: Clear chat\n"
             "Ctrl+F: Search / filter chat\n"
             "Ctrl+N / Ctrl+P: Next / Prev match\n"
@@ -972,13 +1301,32 @@ class VoiceAgentTUI(App):
             "active" if getattr(self, "_dictation_mode_active", False) else "inactive"
         )
         privacy = "ON" if getattr(self, "_privacy_mode", False) else "off"
+
+        # Check TTS status
+        va = getattr(self._agent_adapter, "voice_agent", None)
+        tts_status = "unavailable"
+        if va:
+            tts_service = getattr(va, "tts_service", None)
+            if tts_service:
+                if hasattr(tts_service, "enabled"):
+                    tts_status = "enabled" if tts_service.enabled else "disabled"
+                elif hasattr(tts_service, "_enabled"):
+                    tts_status = "enabled" if tts_service._enabled else "disabled"
+                elif hasattr(va, "_tts_service_backup"):
+                    tts_status = "disabled"
+                else:
+                    tts_status = "enabled"
+            elif hasattr(va, "_tts_service_backup"):
+                tts_status = "disabled"
+
         return (
             "[bold underline]Settings[/]\n"
             f"Dictation Mode (F6): {dictation}\n"
             f"Privacy Mode (voice command): {privacy}\n"
-            f"Timestamps (F7): {ts}\n"
-            f"Color Scheme (F8): {cs}\n"
-            f"Animations (F9): {anim}\n"
+            f"TTS (Ctrl+T, x): {tts_status}\n"
+            f"Timestamps (Ctrl+T, i): {ts}\n"
+            f"Color Scheme (Ctrl+T, c): {cs}\n"
+            f"Animations (Ctrl+T, a): {anim}\n"
             "Search (Ctrl+F) - show/hide search panel\n"
             "Pruning: automatic when buffer full (inserts summary)\n"
             "Persistence of changes not yet implemented.\n"
@@ -1179,6 +1527,92 @@ class VoiceAgentTUI(App):
                 )
             )
 
+    async def action_prefix_toggle(self) -> None:  # type: ignore
+        """Enter toggle mode - next key will execute a toggle action."""
+        if self._toggle_timeout_task:
+            self._toggle_timeout_task.cancel()
+
+        self._toggle_mode = True
+        self.chat.add_message(
+            ChatMessage(
+                role="system",
+                content="[bold yellow]Toggle Mode:[/] Ctrl+S=Settings, Ctrl+D=Debug, Ctrl+T=Tools, Ctrl+C=Colors, Ctrl+I=Timestamps, Ctrl+A=Animations, Ctrl+M=Metrics, Ctrl+R=Privacy, Ctrl+X=TTS (Esc to cancel)",
+            )
+        )
+
+        # Auto-cancel toggle mode after 5 seconds
+        self._toggle_timeout_task = asyncio.create_task(self._toggle_timeout())
+
+        # Refresh help panel if visible
+        if self.help_panel and self.help_panel.display:  # type: ignore
+            self.help_panel.update(self._help_text())  # type: ignore
+
+    async def _toggle_timeout(self) -> None:
+        """Cancel toggle mode after timeout."""
+        await asyncio.sleep(5.0)
+        if self._toggle_mode:
+            self._toggle_mode = False
+            self.chat.add_message(
+                ChatMessage(role="system", content="(Toggle mode timeout)")
+            )
+            if self.help_panel and self.help_panel.display:  # type: ignore
+                self.help_panel.update(self._help_text())  # type: ignore
+
+    async def action_toggle_tts(self) -> None:  # type: ignore
+        """Toggle TTS on/off."""
+        va = getattr(self._agent_adapter, "voice_agent", None)
+        if not va:
+            self.chat.add_message(
+                ChatMessage(
+                    role="system", content="(Voice agent not available)", status="error"
+                )
+            )
+            return
+
+        try:
+            tts_service = getattr(va, "tts_service", None)
+            if not tts_service:
+                self.chat.add_message(
+                    ChatMessage(
+                        role="system",
+                        content="(TTS service not initialized)",
+                        status="error",
+                    )
+                )
+                return
+
+            # Check if TTS has an enabled/disabled state
+            if hasattr(tts_service, "enabled"):
+                tts_service.enabled = not getattr(tts_service, "enabled", True)
+                status = "enabled" if tts_service.enabled else "disabled"
+            elif hasattr(tts_service, "_enabled"):
+                tts_service._enabled = not getattr(tts_service, "_enabled", True)
+                status = "enabled" if tts_service._enabled else "disabled"
+            else:
+                # Fallback: temporarily set TTS service to None to disable
+                if hasattr(va, "_tts_service_backup"):
+                    # Restore from backup
+                    va.tts_service = va._tts_service_backup
+                    delattr(va, "_tts_service_backup")
+                    status = "enabled"
+                else:
+                    # Backup and disable
+                    va._tts_service_backup = va.tts_service
+                    va.tts_service = None
+                    status = "disabled"
+
+            self.chat.add_message(ChatMessage(role="system", content=f"(TTS {status})"))
+
+            if self.settings_panel and self.settings_panel.display:  # type: ignore
+                self.settings_panel.update(self._settings_text())  # type: ignore
+
+        except Exception as e:
+            self.chat.add_message(
+                ChatMessage(
+                    role="system", content=f"(TTS toggle error: {e})", status="error"
+                )
+            )
+
     async def action_quit_app(self) -> None:  # type: ignore
         """Explicit quit action to ensure reliable exit (duplicate of default quit)."""
         try:
@@ -1210,10 +1644,9 @@ class VoiceAgentTUI(App):
             self._update_search_panel_status()
 
     async def action_scroll_chat_up(self) -> None:  # type: ignore
-        """Scroll up (older content) using native ScrollView."""
+        """Scroll up (older content) - simplified version."""
         try:
             h = getattr(self.chat.size, "height", 25)
-            self.chat._user_scrolled = True  # type: ignore
             amount = max(1, h - 2)
             if hasattr(self.chat, "scroll_relative"):
                 self.chat.scroll_relative(y=-amount)  # type: ignore
@@ -1223,7 +1656,7 @@ class VoiceAgentTUI(App):
             pass
 
     async def action_scroll_chat_down(self) -> None:  # type: ignore
-        """Scroll down (newer content); if near bottom resume auto-follow."""
+        """Scroll down (newer content) - simplified version."""
         try:
             h = getattr(self.chat.size, "height", 25)
             amount = max(1, h - 2)
@@ -1231,22 +1664,12 @@ class VoiceAgentTUI(App):
                 self.chat.scroll_relative(y=amount)  # type: ignore
             elif hasattr(self.chat, "scroll_down"):
                 self.chat.scroll_down(amount)  # type: ignore
-            # Heuristic: after scrolling down, attempt small scroll_end to detect bottom.
-            try:
-                # Capture potential prior state by attempting a scroll_end and seeing if it changes.
-                if hasattr(self.chat, "scroll_end") and not getattr(
-                    self.chat, "_user_scrolled", False
-                ):
-                    self.chat.scroll_end(animate=False)  # type: ignore
-            except Exception:
-                pass
         except Exception:
             pass
 
     async def action_scroll_chat_top(self) -> None:  # type: ignore
-        """Jump to very top (oldest)."""
+        """Jump to very top (oldest) - simplified version."""
         try:
-            self.chat._user_scrolled = True  # type: ignore
             if hasattr(self.chat, "scroll_to"):
                 self.chat.scroll_to(y=0)  # type: ignore
             elif hasattr(self.chat, "scroll_relative"):
@@ -1256,26 +1679,345 @@ class VoiceAgentTUI(App):
             pass
 
     async def action_scroll_chat_bottom(self) -> None:  # type: ignore
-        """Jump to bottom (newest) & resume auto-follow."""
+        """Jump to bottom (newest) - simplified version."""
         try:
             if hasattr(self.chat, "scroll_end"):
                 self.chat.scroll_end(animate=False)  # type: ignore
-            self.chat._user_scrolled = False  # type: ignore
         except Exception:
             pass
+
+    async def _scroll_chat_up_lines(self, lines: int = 3) -> None:
+        """Scroll chat up by specified number of lines."""
+        try:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.debug(
+                f"VoiceAgentTUI._scroll_chat_up_lines called with {lines} lines"
+            )
+            logger.debug(f"Chat widget type: {type(self.chat)}")
+            logger.debug(
+                f"Available methods: {[m for m in dir(self.chat) if 'scroll' in m.lower()]}"
+            )
+
+            # Check current state
+            try:
+                logger.debug(
+                    f"Chat scroll_y: {getattr(self.chat, 'scroll_y', 'unknown')}"
+                )
+                logger.debug(
+                    f"Chat max_scroll_y: {getattr(self.chat, 'max_scroll_y', 'unknown')}"
+                )
+                logger.debug(
+                    f"Chat content height: {getattr(self.chat, 'content_height', 'unknown')}"
+                )
+                logger.debug(
+                    f"Chat messages count: {len(getattr(self.chat, '_messages', []))}"
+                )
+            except Exception as state_err:
+                logger.debug(f"Failed to get widget state: {state_err}")
+
+            # Try different scroll APIs in order of preference
+            success = False
+            position_changed = False
+
+            if hasattr(self.chat, "scroll_relative"):
+                try:
+                    logger.debug("Trying scroll_relative method for up scroll")
+                    current_y_before = getattr(self.chat, "scroll_y", 0)
+                    self.chat.scroll_relative(y=-lines)  # type: ignore
+                    current_y_after = getattr(self.chat, "scroll_y", 0)
+                    position_changed = current_y_after != current_y_before
+                    logger.debug(
+                        f"scroll_relative called - y position: {current_y_before} -> {current_y_after} (changed: {position_changed})"
+                    )
+                    success = True
+
+                    # Force a refresh
+                    try:
+                        self.chat.refresh(repaint=True, layout=True)
+                        logger.debug("Chat widget refreshed after scroll")
+                    except Exception as refresh_err:
+                        logger.debug(f"Chat refresh failed: {refresh_err}")
+
+                except Exception as e:
+                    logger.debug(f"scroll_relative failed: {e}")
+
+            if not success and hasattr(self.chat, "scroll_up"):
+                try:
+                    logger.debug("Trying scroll_up method")
+                    current_y_before = getattr(self.chat, "scroll_y", 0)
+                    self.chat.scroll_up(lines)  # type: ignore
+                    current_y_after = getattr(self.chat, "scroll_y", 0)
+                    position_changed = current_y_after != current_y_before
+                    logger.debug(
+                        f"scroll_up called - y position: {current_y_before} -> {current_y_after} (changed: {position_changed})"
+                    )
+                    success = True
+
+                    # Force a refresh
+                    try:
+                        self.chat.refresh(repaint=True, layout=True)
+                        logger.debug("Chat widget refreshed after scroll")
+                    except Exception as refresh_err:
+                        logger.debug(f"Chat refresh failed: {refresh_err}")
+
+                except Exception as e:
+                    logger.debug(f"scroll_up failed: {e}")
+
+            if not success and hasattr(self.chat, "scroll_to"):
+                try:
+                    logger.debug("Trying scroll_to method")
+                    current_y = getattr(self.chat, "scroll_y", 0)
+                    new_y = max(0, current_y - lines)
+                    logger.debug(f"scroll_to target: {current_y} - {lines} = {new_y}")
+                    self.chat.scroll_to(y=new_y)  # type: ignore
+                    actual_y = getattr(self.chat, "scroll_y", 0)
+                    position_changed = actual_y != current_y
+                    logger.debug(
+                        f"scroll_to result - y position: {current_y} -> {actual_y} (changed: {position_changed})"
+                    )
+                    success = True
+
+                    # Force a refresh
+                    try:
+                        self.chat.refresh(repaint=True, layout=True)
+                        logger.debug("Chat widget refreshed after scroll")
+                    except Exception as refresh_err:
+                        logger.debug(f"Chat refresh failed: {refresh_err}")
+
+                except Exception as e:
+                    logger.debug(f"scroll_to failed: {e}")
+
+            # If standard methods didn't change position, try force scroll
+            if (
+                success
+                and not position_changed
+                and hasattr(self.chat, "force_scroll_up")
+            ):
+                try:
+                    logger.debug(
+                        "Standard scroll methods didn't change position, trying force_scroll_up"
+                    )
+                    force_success = self.chat.force_scroll_up(lines)  # type: ignore
+                    logger.debug(f"force_scroll_up result: {force_success}")
+                    if force_success:
+                        position_changed = True
+                except Exception as e:
+                    logger.debug(f"force_scroll_up failed: {e}")
+
+            if not success:
+                logger.debug("No working scroll methods found for up scroll")
+            else:
+                logger.debug(
+                    f"Chat scroll operation completed - success={success}, position_changed={position_changed}"
+                )
+
+        except Exception as e:
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug(f"_scroll_chat_up_lines error: {e}")
+            except Exception:
+                pass
+
+    async def _scroll_chat_down_lines(self, lines: int = 3) -> None:
+        """Scroll chat down by specified number of lines."""
+        try:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.debug(
+                f"VoiceAgentTUI._scroll_chat_down_lines called with {lines} lines"
+            )
+            logger.debug(f"Chat widget type: {type(self.chat)}")
+
+            # First, let's check the current state and content
+            try:
+                logger.debug(
+                    f"Chat widget size: {getattr(self.chat, 'size', 'unknown')}"
+                )
+                logger.debug(
+                    f"Chat content height: {getattr(self.chat, 'content_height', 'unknown')}"
+                )
+                logger.debug(
+                    f"Chat scroll_y: {getattr(self.chat, 'scroll_y', 'unknown')}"
+                )
+                logger.debug(
+                    f"Chat scroll_x: {getattr(self.chat, 'scroll_x', 'unknown')}"
+                )
+                logger.debug(
+                    f"Chat max_scroll_y: {getattr(self.chat, 'max_scroll_y', 'unknown')}"
+                )
+                logger.debug(
+                    f"Chat is_scrollable: {getattr(self.chat, 'is_scrollable', 'unknown')}"
+                )
+                logger.debug(
+                    f"Chat virtual_size: {getattr(self.chat, 'virtual_size', 'unknown')}"
+                )
+                logger.debug(
+                    f"Chat messages count: {len(getattr(self.chat, '_messages', []))}"
+                )
+            except Exception as state_err:
+                logger.debug(f"Failed to get widget state: {state_err}")
+
+            # Try different scroll APIs in order of preference
+            success = False
+            position_changed = False
+
+            if hasattr(self.chat, "scroll_relative"):
+                try:
+                    logger.debug("Trying scroll_relative method for down scroll")
+                    current_y_before = getattr(self.chat, "scroll_y", 0)
+                    self.chat.scroll_relative(y=lines)  # type: ignore
+                    current_y_after = getattr(self.chat, "scroll_y", 0)
+                    position_changed = current_y_after != current_y_before
+                    logger.debug(
+                        f"scroll_relative called - y position: {current_y_before} -> {current_y_after} (changed: {position_changed})"
+                    )
+                    success = True
+
+                    # Force a refresh to ensure visual update
+                    try:
+                        self.chat.refresh(repaint=True, layout=True)
+                        logger.debug("Chat widget refreshed after scroll")
+                    except Exception as refresh_err:
+                        logger.debug(f"Chat refresh failed: {refresh_err}")
+
+                except Exception as e:
+                    logger.debug(f"scroll_relative failed: {e}")
+
+            if not success and hasattr(self.chat, "scroll_down"):
+                try:
+                    logger.debug("Trying scroll_down method")
+                    current_y_before = getattr(self.chat, "scroll_y", 0)
+                    self.chat.scroll_down(lines)  # type: ignore
+                    current_y_after = getattr(self.chat, "scroll_y", 0)
+                    position_changed = current_y_after != current_y_before
+                    logger.debug(
+                        f"scroll_down called - y position: {current_y_before} -> {current_y_after} (changed: {position_changed})"
+                    )
+                    success = True
+
+                    # Force a refresh
+                    try:
+                        self.chat.refresh(repaint=True, layout=True)
+                        logger.debug("Chat widget refreshed after scroll")
+                    except Exception as refresh_err:
+                        logger.debug(f"Chat refresh failed: {refresh_err}")
+
+                except Exception as e:
+                    logger.debug(f"scroll_down failed: {e}")
+
+            if not success and hasattr(self.chat, "scroll_to"):
+                try:
+                    logger.debug("Trying scroll_to method")
+                    current_y = getattr(self.chat, "scroll_y", 0)
+                    new_y = current_y + lines
+                    logger.debug(f"scroll_to target: {current_y} + {lines} = {new_y}")
+                    self.chat.scroll_to(y=new_y)  # type: ignore
+                    actual_y = getattr(self.chat, "scroll_y", 0)
+                    position_changed = actual_y != current_y
+                    logger.debug(
+                        f"scroll_to result - y position: {current_y} -> {actual_y} (changed: {position_changed})"
+                    )
+                    success = True
+
+                    # Force a refresh
+                    try:
+                        self.chat.refresh(repaint=True, layout=True)
+                        logger.debug("Chat widget refreshed after scroll")
+                    except Exception as refresh_err:
+                        logger.debug(f"Chat refresh failed: {refresh_err}")
+
+                except Exception as e:
+                    logger.debug(f"scroll_to failed: {e}")
+
+            # If standard methods didn't change position, try force scroll
+            if (
+                success
+                and not position_changed
+                and hasattr(self.chat, "force_scroll_down")
+            ):
+                try:
+                    logger.debug(
+                        "Standard scroll methods didn't change position, trying force_scroll_down"
+                    )
+                    force_success = self.chat.force_scroll_down(lines)  # type: ignore
+                    logger.debug(f"force_scroll_down result: {force_success}")
+                    if force_success:
+                        position_changed = True
+                except Exception as e:
+                    logger.debug(f"force_scroll_down failed: {e}")
+
+            if not success:
+                logger.debug("No working scroll methods found for down scroll")
+            else:
+                logger.debug(
+                    f"Chat scroll operation completed - success={success}, position_changed={position_changed}"
+                )
+
+        except Exception as e:
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug(f"_scroll_chat_down_lines error: {e}")
+            except Exception:
+                pass
 
     async def on_key(self, event: events.Key) -> None:  # type: ignore
         """
         Global key handling:
         - Ctrl+Q: quit application.
         - PageUp/PageDown/Home/End: scroll even if input has focus (focus-agnostic scroll).
+        - Toggle mode key handling: when in toggle mode, handle specific keys.
 
         Esc no longer quits the app (reserved for clearing input when input focused).
         """
         try:
+            # Handle toggle mode keys
+            if self._toggle_mode:
+                await self._handle_toggle_key(event.key)
+                return
+
             if event.key == "ctrl+q":
                 await self.action_quit_app()
                 return
+
+            # Handle chat scrolling when chat is focused
+            if self.focused == self.chat:
+                handled = False
+                try:
+                    import logging
+
+                    logging.getLogger(__name__).debug(
+                        f"Chat focused, handling key: {event.key}"
+                    )
+                except Exception:
+                    pass
+
+                if event.key in ("up", "k"):
+                    await self._scroll_chat_up_lines(3)
+                    handled = True
+                elif event.key in ("down", "j"):
+                    await self._scroll_chat_down_lines(3)
+                    handled = True
+                elif event.key == "pageup":
+                    await self.action_scroll_chat_up()
+                    handled = True
+                elif event.key == "pagedown":
+                    await self.action_scroll_chat_down()
+                    handled = True
+                elif event.key == "home":
+                    await self.action_scroll_chat_top()
+                    handled = True
+                elif event.key == "end":
+                    await self.action_scroll_chat_bottom()
+                    handled = True
+
+                if handled:
+                    return
+
             if event.key in ("pageup", "pagedown", "home", "end"):
                 # Route to scroll actions regardless of current focus
                 mapping = {
@@ -1290,6 +2032,57 @@ class VoiceAgentTUI(App):
                 return
         except Exception:
             pass
+
+    async def _handle_toggle_key(self, key: str) -> None:
+        """Handle keys when in toggle mode."""
+        try:
+            # Cancel toggle mode first
+            if self._toggle_timeout_task:
+                self._toggle_timeout_task.cancel()
+            self._toggle_mode = False
+
+            # Refresh help panel if visible
+            if self.help_panel and self.help_panel.display:  # type: ignore
+                self.help_panel.update(self._help_text())  # type: ignore
+
+            # Handle the specific toggle action - now expecting ctrl+key combinations
+            if key == "ctrl+s":
+                await self.action_toggle_settings()
+            elif key == "ctrl+d":
+                await self.action_toggle_debug()
+            elif key == "ctrl+t":
+                await self.action_toggle_tool_panel()
+            elif key == "ctrl+c":
+                await self.action_cycle_colors()
+            elif key == "ctrl+i":
+                await self.action_toggle_timestamps()
+            elif key == "ctrl+a":
+                await self.action_toggle_animations()
+            elif key == "ctrl+m":
+                await self.action_toggle_metrics_panel()
+            elif key == "ctrl+r":
+                # Toggle privacy mode (if not already active, start it)
+                if not self._privacy_mode:
+                    handled = await self.handle_voice_command("privacy_on")
+                else:
+                    handled = await self.handle_voice_command("privacy_off")
+            elif key == "ctrl+x":
+                await self.action_toggle_tts()
+            elif key == "escape":
+                self.chat.add_message(
+                    ChatMessage(role="system", content="(Toggle mode canceled)")
+                )
+            else:
+                self.chat.add_message(
+                    ChatMessage(role="system", content=f"(Unknown toggle key: {key})")
+                )
+
+        except Exception as e:
+            self.chat.add_message(
+                ChatMessage(
+                    role="system", content=f"(Toggle key error: {e})", status="error"
+                )
+            )
 
     def _update_search_panel_status(self) -> None:
         """Update search panel placeholder with match navigation status."""

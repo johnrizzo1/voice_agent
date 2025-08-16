@@ -7,8 +7,8 @@ audio:
 
   # VAD / speech detection tuning (adjusted for reduced sensitivity to brief transients like keyboard clicks)
   vad_aggressiveness: 3 # 0-3 (higher = more aggressive filtering of noise)
-  min_speech_frames: 8 # Require more consecutive speech frames to confirm start
-  max_silence_frames: 15 # Shorter trailing silence to finish sooner after real speech
+  min_speech_frames: 20 # Require many consecutive speech frames to avoid keyboard/noise false triggers
+  max_silence_frames: 75 # Allow longer pauses for natural thinking (75 frames = ~1.5 seconds)
   speech_detection_cooldown: 2.0 # Seconds after TTS before listening resumes
 
 stt:
@@ -75,7 +75,7 @@ ui:
 
 # Multi-agent system configuration
 multi_agent:
-  enabled: false # Feature flag - set to true to enable multi-agent functionality
+  enabled: true # Feature flag - set to true to enable multi-agent functionality
   default_agent: "general_agent"
   routing_strategy: "hybrid" # hybrid | rules_only | embeddings_only | llm_fallback
   confidence_threshold: 0.7

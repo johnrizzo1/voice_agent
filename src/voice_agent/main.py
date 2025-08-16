@@ -117,6 +117,39 @@ def main(
 
         if debug:
             agent_config.logging.level = "DEBUG"
+            # Configure file logging for debug mode to avoid cluttering TUI
+            import logging
+
+            # Ensure debug.log is written to current directory
+            debug_log_path = "debug.log"
+
+            # Clear any existing handlers to avoid duplicates
+            root_logger = logging.getLogger()
+            for handler in root_logger.handlers[:]:
+                root_logger.removeHandler(handler)
+
+            # Set up file handler for debug logging
+            file_handler = logging.FileHandler(
+                debug_log_path, mode="w"
+            )  # Overwrite each run
+            file_formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s"
+            )
+            file_handler.setFormatter(file_formatter)
+            file_handler.setLevel(logging.DEBUG)
+
+            # Add file handler to root logger
+            root_logger.addHandler(file_handler)
+            root_logger.setLevel(logging.DEBUG)
+
+            # Set a flag so the orchestrator knows not to reconfigure logging
+            import os
+
+            os.environ["VOICE_AGENT_DEBUG_FILE_LOGGING"] = "1"
+
+            click.echo(
+                f"🐛 Debug mode enabled - logs will be written to {debug_log_path}"
+            )
         else:
             # Suppress info/debug noise unless --debug provided
             agent_config.logging.level = "WARNING"

@@ -111,6 +111,13 @@ class VoiceAgentOrchestrator:
 
     def _setup_logging(self) -> None:
         """Setup logging configuration."""
+        import os
+
+        # Skip logging configuration if debug file logging is already set up
+        if os.environ.get("VOICE_AGENT_DEBUG_FILE_LOGGING") == "1":
+            # File logging already configured in main.py, don't interfere
+            return
+
         logging.basicConfig(
             level=getattr(logging, self.config.logging.level),
             format=self.config.logging.format,
