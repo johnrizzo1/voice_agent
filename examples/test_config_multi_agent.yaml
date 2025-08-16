@@ -1,0 +1,225 @@
+# Test configuration for Voice Agent with Multi-Agent enabled
+audio:
+  input_device: null
+  output_device: null
+  sample_rate: 16000
+  chunk_size: 1024
+  vad_aggressiveness: 3
+  min_speech_frames: 8
+  max_silence_frames: 15
+  speech_detection_cooldown: 2.0
+
+stt:
+  model: "whisper-base"
+  language: "auto"
+  streaming: true
+
+tts:
+  engine: "bark"
+  voice: "default"
+  speed: 1.0
+  bark_voice_preset: v2/en_speaker_1
+  post_tts_cooldown: 0.3
+  tts_cooldown_margin: 0.25
+  enable_tts_buffer_double_clear: false
+
+llm:
+  provider: "ollama"
+  model: "llama3.2:3b"
+  temperature: 0.7
+  max_tokens: 2048
+
+tools:
+  enabled:
+    - calculator
+    - weather
+    - file_ops
+    - web_search
+    - news
+    - calendar
+  disabled: []
+
+conversation:
+  max_history: 50
+  context_window: 4096
+  interrupt_enabled: true
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# UI configuration for voice testing
+ui:
+  mode: auto
+  force_text_only: false # Enable voice pipeline
+  refresh_rate: 0.5
+  max_messages: 500
+  show_timestamps: true
+  color_scheme: default
+  enable_animations: true
+  enable_audio: true # Enable audio for voice mode
+  keymap_overrides: {}
+
+# Multi-agent system configuration - ENABLED for testing
+multi_agent:
+  enabled: true # Enable multi-agent functionality
+  default_agent: "general_agent"
+  routing_strategy: "hybrid"
+  confidence_threshold: 0.7
+  max_concurrent_agents: 5
+  context_sharing_enabled: true
+  context_window_size: 4000
+  embedding_model: "nomic-embed-text"
+
+  # Agent definitions
+  agents:
+    general_agent:
+      type: "GeneralAgent"
+      capabilities:
+        - "general_chat"
+        - "tool_execution"
+        - "conversation_memory"
+      tools:
+        - "calculator"
+        - "weather"
+        - "file_ops"
+      system_prompt: "You are a helpful general-purpose AI assistant. Keep responses conversational and voice-friendly."
+      max_concurrent_tasks: 5
+      timeout_seconds: 30.0
+
+    tool_specialist:
+      type: "ToolSpecialistAgent"
+      capabilities:
+        - "tool_execution"
+        - "file_operations"
+        - "calculations"
+        - "system_info"
+      tools:
+        - "calculator"
+        - "file_ops"
+        - "weather"
+        - "web_search"
+      system_prompt: "You are a specialist in tool execution and file operations. Be precise and thorough, but keep responses suitable for voice interaction."
+      max_concurrent_tasks: 3
+      timeout_seconds: 60.0
+
+    information_agent:
+      type: "InformationAgent"
+      capabilities:
+        - "weather_info"
+        - "web_search"
+        - "news_info"
+        - "tool_execution"
+        - "conversation_memory"
+      tools:
+        - "weather"
+        - "web_search"
+        - "news"
+      system_prompt: "You are an information specialist. Provide accurate, up-to-date information in a conversational tone suitable for voice interaction. Include source context when helpful."
+      max_concurrent_tasks: 4
+      timeout_seconds: 45.0
+
+    utility_agent:
+      type: "UtilityAgent"
+      capabilities:
+        - "calculations"
+        - "tool_execution"
+        - "conversation_memory"
+        - "system_info"
+      tools:
+        - "calculator"
+      system_prompt: "You are a mathematical calculation specialist. Provide clear explanations of your reasoning and calculations in a voice-friendly format."
+      max_concurrent_tasks: 4
+      timeout_seconds: 30.0
+
+  # Routing rules configuration
+  routing_rules:
+    - name: "weather_requests"
+      target_agent: "information_agent"
+      patterns:
+        - "weather"
+        - "forecast"
+        - "temperature"
+        - "rain"
+        - "snow"
+        - "storm"
+        - "sunny"
+        - "cloudy"
+        - "climate"
+        - "what's the weather"
+        - "how's the weather"
+      capabilities:
+        - "weather_info"
+      priority: 1
+      confidence: 0.9
+
+    - name: "web_search_requests"
+      target_agent: "information_agent"
+      patterns:
+        - "search"
+        - "find"
+        - "look up"
+        - "google"
+        - "research"
+        - "information about"
+        - "tell me about"
+        - "what do you know about"
+      capabilities:
+        - "web_search"
+      priority: 1
+      confidence: 0.85
+
+    - name: "utility_calculation_requests"
+      target_agent: "utility_agent"
+      patterns:
+        - "calculate"
+        - "compute"
+        - "math"
+        - "equation"
+        - "sum"
+        - "multiply"
+        - "divide"
+        - "subtract"
+        - "formula"
+        - "solve"
+        - "arithmetic"
+        - "percentage"
+        - "ratio"
+        - "what is"
+        - "how much is"
+      capabilities:
+        - "calculations"
+      priority: 1
+      confidence: 0.9
+
+    - name: "file_operations"
+      target_agent: "tool_specialist"
+      patterns:
+        - "file"
+        - "directory"
+        - "folder"
+        - "path"
+        - "save"
+        - "load"
+        - "read"
+        - "write"
+      capabilities:
+        - "file_operations"
+      priority: 2
+      confidence: 0.85
+
+    - name: "general_conversation"
+      target_agent: "general_agent"
+      patterns:
+        - "hello"
+        - "hi"
+        - "how are you"
+        - "tell me"
+        - "explain"
+        - "help"
+        - "thanks"
+        - "thank you"
+      capabilities:
+        - "general_chat"
+      priority: 8
+      confidence: 0.6

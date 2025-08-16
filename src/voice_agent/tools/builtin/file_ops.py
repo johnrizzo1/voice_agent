@@ -15,7 +15,7 @@ class FileOpsParameters(BaseModel):
     """Parameters for the file operations tool."""
 
     operation: str = Field(
-        description="Operation to perform (read, write, list, exists, delete)"
+        description="Operation to perform. Supports both exact operations (read, write, list, exists, delete) and natural language (save, create, open, view, etc.)"
     )
     path: str = Field(description="File or directory path")
     content: str = Field(default="", description="Content for write operations")
@@ -102,27 +102,108 @@ class FileOpsTool(Tool):
                     "error": "Invalid or forbidden path",
                 }
 
+            # Map natural language operations to supported operations
+            normalized_operation = self._normalize_operation(operation)
+
             # Execute the requested operation
-            if operation.lower() == "read":
+            if normalized_operation == "read":
                 return self._read_file(file_path)
-            elif operation.lower() == "write":
+            elif normalized_operation == "write":
                 return self._write_file(file_path, content)
-            elif operation.lower() == "list":
+            elif normalized_operation == "list":
                 return self._list_directory(file_path, recursive)
-            elif operation.lower() == "exists":
+            elif normalized_operation == "exists":
                 return self._check_exists(file_path)
-            elif operation.lower() == "delete":
+            elif normalized_operation == "delete":
                 return self._delete_file(file_path)
             else:
+                supported_ops = ["read", "write", "list", "exists", "delete"]
+                natural_language_examples = [
+                    "save/create/store → write",
+                    "open/view → read",
+                    "show/display → list",
+                    "check → exists",
+                    "remove → delete",
+                ]
                 return {
                     "success": False,
                     "result": None,
-                    "error": f"Unknown operation: {operation}",
+                    "error": f"Unknown operation: '{operation}'. Supported operations: {', '.join(supported_ops)}. Natural language examples: {'; '.join(natural_language_examples)}",
                 }
 
         except Exception as e:
             self.logger.error(f"File operation error: {e}")
             return {"success": False, "result": None, "error": str(e)}
+
+    def _normalize_operation(self, operation: str) -> str:
+        """
+        Normalize natural language operations to supported operations.
+
+        Args:
+            operation: Raw operation string from user
+
+        Returns:
+            Normalized operation string or original if no mapping found
+        """
+        # Convert to lowercase for case-insensitive matching
+        op_lower = operation.lower().strip()
+
+        # Operation mappings from natural language to supported operations
+        operation_mappings = {
+            # Write operation mappings
+            "save": "write",
+            "create": "write",
+            "store": "write",
+            "write to": "write",
+            "save to": "write",
+            "create file": "write",
+            "save file": "write",
+            "write file": "write",
+            "store in": "write",
+            "put": "write",
+            # Read operation mappings
+            "open": "read",
+            "view": "read",
+            "read from": "read",
+            "open file": "read",
+            "view file": "read",
+            "show": "read",
+            "display": "read",
+            "get": "read",
+            "load": "read",
+            # List operation mappings
+            "list": "list",
+            "show directory": "list",
+            "list directory": "list",
+            "list files": "list",
+            "show files": "list",
+            "dir": "list",
+            "ls": "list",
+            # Exists operation mappings
+            "exists": "exists",
+            "check": "exists",
+            "check if exists": "exists",
+            "verify": "exists",
+            "find": "exists",
+            # Delete operation mappings
+            "delete": "delete",
+            "remove": "delete",
+            "rm": "delete",
+            "del": "delete",
+            "erase": "delete",
+        }
+
+        # Check for direct mapping
+        if op_lower in operation_mappings:
+            return operation_mappings[op_lower]
+
+        # Check for partial matches (e.g., "save this to file" contains "save")
+        for natural_op, normalized_op in operation_mappings.items():
+            if natural_op in op_lower:
+                return normalized_op
+
+        # If no mapping found, return the original operation
+        return op_lower
 
     def _validate_path(self, path: str) -> Path:
         """
@@ -390,11 +471,11 @@ class FileOpsTool(Tool):
             "name": self.name,
             "description": self.description,
             "operations": {
-                "read": "Read contents of a file",
-                "write": "Write content to a file",
-                "list": "List directory contents",
-                "exists": "Check if file/directory exists",
-                "delete": "Delete a file",
+                "read": "Read contents of a file (also: open, view, show, display, get, load)",
+                "write": "Write content to a file (also: save, create, store, put)",
+                "list": "List directory contents (also: show directory, dir, ls)",
+                "exists": "Check if file/directory exists (also: check, verify, find)",
+                "delete": "Delete a file (also: remove, rm, del, erase)",
             },
             "parameters": {
                 "operation": "Operation to perform",

@@ -71,6 +71,25 @@ in
     webrtcvad
     vosk
     bark
+
+    # LlamaIndex Core
+    llama-index-core>=0.10.0
+
+    # LlamaIndex Ollama Integration
+    llama-index-llms-ollama>=0.2.0
+    llama-index-embeddings-ollama>=0.2.0
+
+    # LlamaIndex Essential Components for Multi-Agent Functionality
+    llama-index-agent-openai>=0.2.0
+    llama-index-multi-modal-llms-openai>=0.1.0
+    llama-index-program-openai>=0.1.0
+
+    # Additional LlamaIndex utilities
+    llama-index-readers-file>=0.1.0
+    llama-index-vector-stores-chroma>=0.1.0
+
+    # Supporting dependencies for LlamaIndex
+    nest-asyncio>=1.5.0
   '';
 
   # Ensure src is importable without installing the package (editable style).

@@ -200,12 +200,14 @@ class StatusBar(Static):
         get_status: Callable[[], PipelineStatus],
         enable_animations: bool = False,
         get_audio_level: Optional[Callable[[], float]] = None,
+        get_microphone_state: Optional[Callable[[], dict]] = None,
     ):
         super().__init__()
         self._get_status = get_status
         self._tick = 0
         self._enable_animations = enable_animations
         self._get_audio_level = get_audio_level or (lambda: 0.0)
+        self._get_microphone_state = get_microphone_state or (lambda: {})
 
     def on_mount(self) -> None:  # type: ignore
         self.set_interval(0.5, self._advance)
@@ -236,9 +238,15 @@ class StatusBar(Static):
                 rendered_label = f"{label}{frame}"
             return f"[{color}]{rendered_label}={state.value}[/]"
 
+        # Get microphone state for enhanced input display
+        mic_state = self._get_microphone_state()
+
+        # Enhanced audio input display with microphone status
+        audio_input_display = self._format_audio_input(status.audio_input, mic_state)
+
         # Base parts (excluding meter so we can right-align meter)
         base_parts = [
-            fmt("🎤in", status.audio_input),
+            audio_input_display,
             fmt("🧠stt", status.stt),
             fmt("💭llm", status.llm),
             fmt("🗣️tts", status.tts),
@@ -282,6 +290,48 @@ class StatusBar(Static):
         else:
             # Fallback (no width known) -> append meter at end
             return f"{left} | {meter_text}"
+
+    def _format_audio_input(self, state: ComponentState, mic_state: dict) -> str:
+        """Format audio input display with microphone status indicators."""
+        # Determine icon and color based on microphone state
+        if mic_state.get("is_muted", False):
+            icon = "🔇"
+            color = "red"
+            status_text = "muted"
+        elif mic_state.get("is_paused", False):
+            icon = "⏸️"
+            color = "yellow"
+            status_text = "paused"
+        elif mic_state.get("has_error", False):
+            icon = "❌"
+            color = "red"
+            status_text = "error"
+        elif state == ComponentState.ACTIVE:
+            icon = "🎤"
+            color = "bright_green"
+            status_text = "listening"
+        elif state == ComponentState.READY:
+            icon = "🎤"
+            color = "green"
+            status_text = "ready"
+        elif state == ComponentState.DISABLED:
+            icon = "🚫"
+            color = "grey30"
+            status_text = "disabled"
+        else:
+            icon = "🎤"
+            color = "grey50"
+            status_text = state.value
+
+        # Add animation for active listening
+        if state == ComponentState.ACTIVE and self._enable_animations:
+            spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+            frame = spinner_frames[self._tick % len(spinner_frames)]
+            if self._tick % 2 == 1:
+                color = "green"
+            return f"[{color}]{icon}{frame}={status_text}[/]"
+
+        return f"[{color}]{icon}={status_text}[/]"
 
 
 class ChatLog(ScrollView):
@@ -629,7 +679,7 @@ class VoiceAgentTUI(App):
     """
 
     BINDINGS = [
-        ("ctrl+q", "quit_app", "Quit"),
+        ("ctrl+q", "action_quit_app", "Quit"),
         ("tab", "focus_input", "Focus Input"),
         ("f1", "toggle_help", "Help"),
         ("f2", "toggle_settings", "Settings"),
@@ -1515,6 +1565,16 @@ class VoiceAgentTUI(App):
         ):
             return "cancel_dictation"
 
+        # Privacy mode detection - order matters and we need exact matching
+        # Check "privacy mode off" first since it's more specific
+        if match(
+            [
+                "privacy mode off",
+                "resume listening",
+            ]
+        ):
+            return "privacy_off"
+
         if match(
             [
                 "privacy mode",
@@ -1526,11 +1586,20 @@ class VoiceAgentTUI(App):
 
         if match(
             [
-                "privacy mode off",
-                "resume listening",
+                "end program",
+                "quit",
+                "exit",
+                "shutdown",
+                "close application",
+                "terminate",
+                "quit application",
+                "exit application",
+                "shut down",
+                "close program",
+                "terminate program",
             ]
         ):
-            return "privacy_off"
+            return "quit_app"
 
         return None
 
@@ -1657,6 +1726,16 @@ class VoiceAgentTUI(App):
                     self.chat.add_message(
                         ChatMessage(role="system", content="(Privacy Mode already off)")
                     )
+                return True
+            elif command == "quit_app":
+                self.chat.add_message(
+                    ChatMessage(
+                        role="system",
+                        content="(Quitting application via voice command...)",
+                    )
+                )
+                # Call the existing quit action method
+                asyncio.create_task(self.action_quit_app())
                 return True
         except Exception as e:
             self.chat.add_message(

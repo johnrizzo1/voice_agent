@@ -1,0 +1,232 @@
+{
+  "test_timestamp": "2025-08-15 17:50:13",
+  "test_results": {
+    "configuration": {
+      "name": "configuration_loading",
+      "subtests": [
+        {
+          "name": "default_config_load",
+          "success": true,
+          "details": {
+            "config_loaded": true,
+            "multi_agent_disabled": true,
+            "has_stt_config": true,
+            "has_tts_config": true,
+            "has_llm_config": true,
+            "has_audio_config": true,
+            "ui_force_text_only": true
+          }
+        },
+        {
+          "name": "config_validation",
+          "success": true,
+          "details": {
+            "overall_health": "healthy",
+            "check_count": 4,
+            "failed_checks": []
+          }
+        }
+      ],
+      "success": true
+    },
+    "initialization": {
+      "name": "system_initialization",
+      "subtests": [
+        {
+          "name": "orchestrator_initialization",
+          "success": true,
+          "details": {
+            "orchestrator_initialized": true,
+            "text_only_mode": true,
+            "multi_agent_disabled": true,
+            "components_initialized": true,
+            "llm_service_ready": true,
+            "conversation_manager_ready": true,
+            "initialization_time": 0.04469871520996094,
+            "orchestrator_info": {
+              "multi_agent_enabled": false,
+              "text_only": true,
+              "is_running": false,
+              "is_initialized": true,
+              "conversation_length": 0,
+              "components": {
+                "audio_manager": false,
+                "stt": false,
+                "tts": false,
+                "llm": true,
+                "tools": true,
+                "conversation": true,
+                "multi_agent_service": false,
+                "llamaindex_service": false
+              }
+            }
+          }
+        }
+      ],
+      "success": true
+    },
+    "components": {
+      "name": "core_components",
+      "subtests": [
+        {
+          "name": "component_status_check",
+          "success": true,
+          "details": {
+            "llm_ready": true,
+            "conversation_ready": true,
+            "tools_ready": true,
+            "audio_manager_disabled": true,
+            "stt_disabled": true,
+            "tts_disabled": true
+          }
+        }
+      ],
+      "success": true
+    },
+    "text_processing": {
+      "name": "text_processing",
+      "subtests": [
+        {
+          "name": "text_query_processing",
+          "success": true,
+          "details": {
+            "success_rate": 1.0,
+            "processed_queries": 3,
+            "successful_queries": 3,
+            "results": [
+              {
+                "query": "Hello, how are you?",
+                "description": "Simple greeting",
+                "response_length": 62,
+                "processing_time": 0.10921859741210938,
+                "success": true,
+                "checks": {
+                  "response_generated": true,
+                  "response_not_empty": true,
+                  "reasonable_length": true,
+                  "processing_time_ok": true
+                }
+              },
+              {
+                "query": "What is 2 + 2?",
+                "description": "Simple calculation",
+                "response_length": 25,
+                "processing_time": 0.09081745147705078,
+                "success": true,
+                "checks": {
+                  "response_generated": true,
+                  "response_not_empty": true,
+                  "reasonable_length": true,
+                  "processing_time_ok": true
+                }
+              },
+              {
+                "query": "Tell me about yourself",
+                "description": "Self-description",
+                "response_length": 261,
+                "processing_time": 0.28164052963256836,
+                "success": true,
+                "checks": {
+                  "response_generated": true,
+                  "response_not_empty": true,
+                  "reasonable_length": true,
+                  "processing_time_ok": true
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "success": true
+    },
+    "tool_integration": {
+      "name": "tool_integration",
+      "subtests": [
+        {
+          "name": "tool_functionality",
+          "success": true,
+          "details": {
+            "success_rate": 0.5,
+            "tool_tests": 2,
+            "successful_tests": 1,
+            "results": [
+              {
+                "query": "Calculate 25 * 37",
+                "tool": "calculator",
+                "description": "Calculator tool test",
+                "processing_time": 0.10105562210083008,
+                "success": true,
+                "checks": {
+                  "response_generated": true,
+                  "suggests_tool_use": true,
+                  "reasonable_processing_time": true
+                }
+              },
+              {
+                "query": "What's the current time?",
+                "tool": "system",
+                "description": "System info test",
+                "processing_time": 0.34995484352111816,
+                "success": false,
+                "checks": {
+                  "response_generated": true,
+                  "suggests_tool_use": false,
+                  "reasonable_processing_time": true
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "success": true
+    },
+    "error_handling": {
+      "name": "error_handling",
+      "subtests": [
+        {
+          "name": "error_recovery",
+          "success": true,
+          "details": {
+            "success_rate": 1.0,
+            "error_tests": 3,
+            "successful_recoveries": 3,
+            "results": [
+              {
+                "description": "Empty input",
+                "query_length": 0,
+                "processing_time": 0.21192264556884766,
+                "graceful_handling": true,
+                "success": true
+              },
+              {
+                "description": "Very long input",
+                "query_length": 1000,
+                "processing_time": 0.34527087211608887,
+                "graceful_handling": true,
+                "success": true
+              },
+              {
+                "description": "Special characters only",
+                "query_length": 10,
+                "processing_time": 0.38274598121643066,
+                "graceful_handling": true,
+                "success": true
+              }
+            ]
+          }
+        }
+      ],
+      "success": true
+    }
+  },
+  "overall_metrics": {
+    "total_subtests": 7,
+    "successful_subtests": 7,
+    "subtest_success_rate": 1.0,
+    "main_test_success_rate": 1.0,
+    "overall_success_rate": 1.0,
+    "production_ready": true,
+    "tests_passed": 6,
+    "total_tests": 6
+  }
+}

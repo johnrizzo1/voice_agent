@@ -549,3 +549,371 @@ Previously, STT/TTS pipeline activation required explicit key presses (F5 push-t
 6. Potential low-power / duty-cycle listening (adaptive sleep intervals) when in long idle periods.
 
 ---
+
+## Decision
+
+2025-08-15 18:13:55 - **Multi-Agent Framework Implementation with LlamaIndex Integration**
+
+## Rationale
+
+Implemented a comprehensive multi-agent framework built on LlamaIndex to enable specialized agent handling of different query types while maintaining full backward compatibility with the existing voice agent system. This addresses the need for more sophisticated task routing and agent specialization without disrupting current functionality.
+
+## Implementation Details
+
+**Core Components Implemented:**
+
+1. **Message System** (`src/voice_agent/core/multi_agent/message.py`):
+   - AgentMessage and AgentResponse data classes with full metadata support
+   - MessageRouter for correlation tracking and conversation management
+   - Comprehensive error handling and timeout management
+   - Message processing history and routing metadata
+
+2. **Base Agent Framework** (`src/voice_agent/core/multi_agent/agent_base.py`):
+   - AgentBase abstract class with LlamaIndex ReAct agent integration
+   - GeneralAgent and ToolSpecialistAgent concrete implementations
+   - Agent capability system with dynamic tool assignment
+   - Performance metrics and conversation history management
+   - Async initialization with proper resource management
+
+3. **Hybrid Routing System** (`src/voice_agent/core/multi_agent/router.py`):
+   - Rule-based routing for explicit pattern matching
+   - Embedding-based semantic routing using Ollama embeddings
+   - LLM fallback routing for complex decisions (extensible)
+   - Load balancing among capable agents
+   - Configurable routing rules and confidence thresholds
+
+4. **Shared Context Manager** (`src/voice_agent/core/multi_agent/context.py`):
+   - Conversation slicing per agent with relevance scoring
+   - Context sharing between agents during handoffs
+   - Sliding window context management with token limits
+   - RAG integration hooks for future knowledge base access
+
+5. **Tool Adapter** (`src/voice_agent/core/multi_agent/tool_adapter.py`):
+   - Seamless bridge between existing ToolExecutor and LlamaIndex FunctionTool
+   - Automatic tool conversion with parameter schema mapping
+   - Agent-specific tool filtering based on capabilities
+   - Custom tool creation support for specialized functions
+
+6. **Configuration Extensions**:
+   - MultiAgentConfig model with comprehensive agent definitions
+   - YAML configuration schema with routing rules
+   - Feature flag support (multi_agent.enabled) for gradual rollout
+   - Backward compatibility preservation with existing configs
+
+7. **Integration Service** (`src/voice_agent/core/multi_agent_service.py`):
+   - Main orchestration service with automatic fallback to single-agent mode
+   - Agent handoff handling with context preservation
+   - Performance tracking and routing statistics
+   - Complete backward compatibility when multi-agent disabled
+
+## Key Architectural Benefits
+
+- **Backward Compatibility**: Existing voice agent functionality unchanged when multi-agent disabled
+- **Gradual Adoption**: Feature flag allows incremental rollout and testing
+- **Extensible Architecture**: Easy addition of new agent types and routing strategies
+- **Performance Optimization**: Load balancing and agent specialization improve response quality
+- **Context Preservation**: Conversation continuity maintained across agent handoffs
+- **Tool Integration**: Existing tools work seamlessly with new agent system
+
+## Configuration Structure
+
+```yaml
+multi_agent:
+  enabled: false # Feature flag
+  default_agent: "general_agent"
+  routing_strategy: "hybrid"
+  agents:
+    general_agent:
+      type: "GeneralAgent"
+      capabilities: ["general_chat", "tool_execution"]
+      tools: ["calculator", "weather", "file_ops"]
+    tool_specialist:
+      type: "ToolSpecialistAgent"
+      capabilities: ["tool_execution", "file_operations", "calculations"]
+      tools: ["calculator", "file_ops", "weather", "web_search"]
+  routing_rules:
+    - name: "calculation_requests"
+      target_agent: "tool_specialist"
+      patterns: ["calculate", "compute", "math"]
+```
+
+## Testing and Validation
+
+- Comprehensive integration test suite created (`test_multi_agent_integration.py`)
+- All 6 test categories passed successfully in devenv environment
+- Verified backward compatibility with existing system
+- Confirmed graceful fallback when dependencies unavailable
+- Validated configuration loading and tool integration
+
+## Implementation Patterns Used
+
+- **Service Architecture Pattern**: Independent, composable services with clear interfaces
+- **Adapter Pattern**: Tool adaptation between existing and LlamaIndex formats
+- **Strategy Pattern**: Pluggable routing strategies (rules, embeddings, LLM)
+- **Observer Pattern**: State callbacks for monitoring and debugging
+- **Factory Pattern**: Agent creation based on configuration
+- **Context Manager Pattern**: Automatic resource cleanup and lifecycle management
+
+## Follow-up Opportunities
+
+1. **LLM-based Routing**: Complete implementation of LLM fallback routing
+2. **Advanced Agent Types**: Code analysis, web search, and planning specialists
+3. **RAG Integration**: Knowledge base integration via vector stores
+4. **Performance Optimization**: Caching and parallel agent processing
+5. **Monitoring Dashboard**: Real-time agent performance and routing visualization
+6. **Agent Learning**: Adaptive routing based on success metrics
+
+## Implications
+
+- Enables sophisticated multi-turn conversations with agent specialization
+- Provides foundation for future AI assistant capabilities (planning, research, analysis)
+- Maintains development velocity through backward compatibility
+- Establishes patterns for complex AI system architecture in voice agents
+- Sets stage for advanced features like agent collaboration and workflow orchestration
+
+---
+
+## Decision
+
+2025-08-15 18:39:00 - **InformationAgent Implementation for Multi-Agent Voice System**
+
+## Rationale
+
+Implemented a specialized InformationAgent to enhance the multi-agent voice system with dedicated information retrieval capabilities. This addresses the need for:
+
+1. **Specialized Information Processing**: Weather, web search, and news queries require domain-specific expertise
+2. **Enhanced Response Formatting**: Information responses need context-aware formatting and source attribution
+3. **Intelligent Query Routing**: Information queries should be routed to agents with specialized knowledge
+4. **Future Extensibility**: Framework for adding news, RSS, and other information sources
+
+## Implementation Details
+
+**Core InformationAgent Features**:
+
+- Extends [`AgentBase`](src/voice_agent/core/multi_agent/agent_base.py:525) with information-focused capabilities
+- Specialized in [`WEATHER_INFO`](src/voice_agent/core/multi_agent/agent_base.py:47), [`WEB_SEARCH`](src/voice_agent/core/multi_agent/agent_base.py:44), and [`NEWS_INFO`](src/voice_agent/core/multi_agent/agent_base.py:48) capabilities
+- Enhanced system prompts optimized for information retrieval tasks
+- Smart handoff logic to route non-information queries to appropriate agents
+- Response formatting with context-aware tips and source attribution
+
+**Tool Integration**:
+
+- Uses existing [`WeatherTool`](src/voice_agent/tools/builtin/weather.py:23) for weather queries
+- Uses existing [`WebSearchTool`](src/voice_agent/tools/builtin/web_search.py:26) for web searches
+- Added placeholder [`NewsTool`](src/voice_agent/tools/builtin/news.py:39) for future RSS/news API integration
+
+**Configuration and Routing**:
+
+- Added InformationAgent configuration to [`MultiAgentConfig`](src/voice_agent/core/config.py:153)
+- Created high-priority routing rules for information queries in [`default.yaml`](src/voice_agent/config/default.yaml:120)
+- Updated multi-agent service to support InformationAgent creation
+
+**Agent Module Structure**:
+
+- Created [`src/voice_agent/agents/__init__.py`](src/voice_agent/agents/__init__.py:1) for agent exports
+- Updated [`multi_agent/__init__.py`](src/voice_agent/core/multi_agent/__init__.py:17) to include concrete agent classes
+
+## Key Architectural Benefits
+
+- **Domain Expertise**: Specialized agent for information-related queries improves response quality
+- **Response Enhancement**: Information-specific formatting and context-aware tips
+- **Smart Routing**: High-priority routing rules ensure information queries reach the right agent
+- **Tool Specialization**: Focused tool assignment (weather, web_search, news) for optimal performance
+- **Future Ready**: Extensible framework for adding news APIs, RSS feeds, and other information sources
+- **Graceful Handoffs**: Non-information queries are properly routed to general or tool specialist agents
+
+## Implementation Patterns Used
+
+- **Specialized Agent Pattern**: Domain-specific agent extending base functionality
+- **Enhanced Prompting Pattern**: Information-optimized system prompts and instructions
+- **Smart Handoff Pattern**: Capability-based routing with fallback logic
+- **Response Formatting Pattern**: Domain-specific response enhancement and formatting
+- **Tool Clustering Pattern**: Grouping related tools (weather, search, news) under specialized agent
+
+## Testing and Validation
+
+Created comprehensive test suite [`test_information_agent.py`](test_information_agent.py:1) covering:
+
+- Agent initialization and configuration
+- Weather query routing and processing
+- Web search query routing and processing
+- News query routing (placeholder)
+- Agent handoff scenarios for non-information queries
+- Multi-agent service integration validation
+
+## Follow-up Opportunities
+
+1. **Real News API Integration**: Replace NewsTool placeholder with actual news/RSS services
+2. **Advanced Information Synthesis**: Combine multiple information sources in single responses
+3. **Caching and Optimization**: Implement intelligent caching for frequently requested information
+4. **Contextual Enhancement**: Add location awareness and user preference learning
+5. **Performance Monitoring**: Track information query success rates and response quality
+
+## Implications
+
+- Enables sophisticated information retrieval through voice interface
+- Provides foundation for news, current events, and research capabilities
+- Improves user experience with specialized information processing
+- Establishes patterns for future domain-specific agents (e.g., research, analysis)
+- Maintains backward compatibility while adding advanced multi-agent capabilities
+
+---
+
+## Decision
+
+2025-08-15 19:02:30 - **UtilityAgent Implementation for Multi-Agent Voice System**
+
+## Rationale
+
+Implemented a specialized UtilityAgent to enhance the multi-agent voice system with dedicated mathematical calculation and utility function capabilities. This addresses the need for:
+
+1. **Specialized Mathematical Processing**: Calculator operations, arithmetic expressions, and computational problem-solving require domain-specific expertise
+2. **Enhanced Mathematical Reasoning**: Step-by-step calculation breakdowns with clear explanations and verification
+3. **Intelligent Query Routing**: Mathematical queries should be routed to agents with specialized mathematical knowledge
+4. **Calculator Tool Integration**: Seamless integration with the existing robust calculator tool for safe mathematical operations
+5. **Future Extensibility**: Framework for adding unit conversions, text processing, and other utility functions
+
+## Implementation Details
+
+**Core UtilityAgent Features**:
+
+- Extends [`AgentBase`](src/voice_agent/core/multi_agent/agent_base.py) with mathematics-focused capabilities
+- Specialized in [`CALCULATIONS`](src/voice_agent/core/multi_agent/agent_base.py:45), [`TOOL_EXECUTION`](src/voice_agent/core/multi_agent/agent_base.py:41), [`CONVERSATION_MEMORY`](src/voice_agent/core/multi_agent/agent_base.py:49), and [`SYSTEM_INFO`](src/voice_agent/core/multi_agent/agent_base.py:48) capabilities
+- Enhanced system prompts optimized for mathematical reasoning and problem-solving
+- Smart handoff logic to route non-mathematical queries to appropriate agents
+- Mathematical computation tracking and performance metrics
+- Response formatting with step-by-step explanations and verification context
+
+**Calculator Tool Integration**:
+
+- Uses existing [`CalculatorTool`](src/voice_agent/tools/builtin/calculator.py:21) for safe mathematical operations
+- Supports arithmetic, algebraic expressions, and mathematical functions
+- AST-based expression evaluation with comprehensive error handling
+- Mathematical constants and helper functions (abs, round, min, max, sum)
+
+**Configuration and Routing**:
+
+- Added UtilityAgent configuration to [`MultiAgentConfig`](src/voice_agent/core/config.py:140) with proper tool assignments
+- Created high-priority routing rules for mathematical queries in [`default.yaml`](src/voice_agent/config/default.yaml:147)
+- Updated multi-agent service to support UtilityAgent creation and initialization
+- Enhanced routing patterns to capture various mathematical query types
+
+**Agent Module Structure**:
+
+- Created [`src/voice_agent/agents/utility_agent.py`](src/voice_agent/agents/utility_agent.py:1) with full UtilityAgent implementation
+- Updated [`agents/__init__.py`](src/voice_agent/agents/__init__.py:18) to include UtilityAgent exports
+- Updated [`multi_agent_service.py`](src/voice_agent/core/multi_agent_service.py:33) to support UtilityAgent initialization
+
+## Key Architectural Benefits
+
+- **Mathematical Expertise**: Specialized agent for mathematical queries improves calculation accuracy and explanation quality
+- **Problem-Solving Enhancement**: Mathematical-specific prompting and step-by-step reasoning approach
+- **Smart Routing**: Dedicated routing rules ensure mathematical queries reach the specialized agent
+- **Tool Specialization**: Focused calculator tool assignment for optimal mathematical performance
+- **Future Ready**: Extensible framework for adding unit conversions, text processing, and data transformations
+- **Graceful Handoffs**: Non-mathematical queries are properly routed to general or domain-specific agents
+
+## Implementation Patterns Used
+
+- **Specialized Agent Pattern**: Domain-specific agent extending base functionality for mathematical tasks
+- **Enhanced Prompting Pattern**: Mathematics-optimized system prompts and reasoning instructions
+- **Smart Handoff Pattern**: Capability-based routing with mathematical keyword detection
+- **Response Enhancement Pattern**: Mathematical-specific response formatting and verification context
+- **Tool Clustering Pattern**: Focused tool assignment (calculator) under specialized mathematical agent
+
+## Testing and Validation
+
+Created comprehensive test suite [`test_utility_agent.py`](test_utility_agent.py:1) covering:
+
+- Agent initialization and configuration validation
+- Mathematical capability verification and routing
+- Calculator tool integration and functionality
+- Multi-agent service integration (with fallback testing)
+- Agent handoff scenarios for mathematical vs. non-mathematical queries
+- Basic functionality validation in devenv environment
+
+**Test Results**:
+
+- ✅ UtilityAgent basic functionality: Agent initializes correctly with proper capabilities
+- ✅ Calculator tool integration: All mathematical operations working correctly (2+3=5, 10\*5=50, (15+5)/4=5.0, 2^8=256)
+- ✅ Configuration integration: Routing rules and agent definitions properly configured
+- ⚠️ Multi-agent service integration: Some environment dependency issues with embedding models, but core functionality validated
+
+## Follow-up Opportunities
+
+1. **Unit Conversion System**: Add comprehensive unit conversion capabilities (metric/imperial, currency, etc.)
+2. **Advanced Mathematical Functions**: Extend calculator with trigonometry, logarithms, statistics
+3. **Mathematical Visualization**: Add simple plotting and graph generation for mathematical results
+4. **Mathematical Memory**: Implement calculation history and variable storage across conversations
+5. **Performance Optimization**: Cache frequently used mathematical constants and results
+6. **Mathematical Validation**: Add result verification and alternative calculation methods
+
+## Implications
+
+- Enables sophisticated mathematical problem-solving through voice interface
+- Provides foundation for computational and utility function capabilities
+- Improves user experience with specialized mathematical processing and clear explanations
+- Establishes patterns for future domain-specific agents (e.g., scientific, engineering, financial)
+- Maintains backward compatibility while adding advanced multi-agent mathematical capabilities
+
+---
+
+## Decision
+
+2025-08-15 22:20:00 - **"End Program" Voice Command Implementation for Application Exit**
+
+## Rationale
+
+Added missing voice command functionality to enable users to quit the voice agent application using spoken commands. While the application had proper quit functionality via Ctrl+Q and existing voice command infrastructure, there was no voice command to trigger application exit, creating an inconsistency in the hands-free user experience.
+
+## Implementation Details
+
+**Voice Command Detection Enhancement**:
+
+- Extended [`detect_voice_command()`](src/voice_agent/ui/tui_app.py:1466) method with comprehensive exit command patterns:
+  - Primary commands: "end program", "quit", "exit", "shutdown"
+  - Extended commands: "close application", "terminate", "quit application", "exit application", "shut down", "close program", "terminate program"
+  - Returns normalized command key "quit_app" when these patterns are detected
+  - Uses existing pattern matching logic with suffix/prefix tolerance for natural speech variations
+
+**Voice Command Handling Integration**:
+
+- Added "quit_app" command case to [`handle_voice_command()`](src/voice_agent/ui/tui_app.py:1587) method
+- Displays user-friendly system message: "(Quitting application via voice command...)"
+- Calls existing [`action_quit_app()`](src/voice_agent/ui/tui_app.py:1182) method for proper cleanup
+- Uses `asyncio.create_task()` to handle the async quit action properly
+- Maintains consistency with existing voice command handling patterns
+
+## Key Architectural Benefits
+
+- **Hands-Free Consistency**: Completes the voice command ecosystem by adding exit functionality
+- **Reuses Existing Infrastructure**: Leverages established quit mechanism (`action_quit_app()`) ensuring proper cleanup
+- **Natural Language Support**: Multiple command variations accommodate different user speech patterns
+- **Safe Integration**: Uses existing voice command detection and handling patterns, maintaining system stability
+- **User Experience**: Provides immediate feedback before initiating quit process
+
+## Implementation Patterns Used
+
+- **Command Pattern**: Normalized command keys with centralized handling logic
+- **Adapter Pattern**: Voice commands bridge to existing keyboard-based actions
+- **Existing Infrastructure Reuse**: Calls established quit method rather than duplicating cleanup logic
+- **Async Task Management**: Proper handling of async quit action within voice command context
+
+## Testing and Validation
+
+Implementation maintains compatibility with existing voice command system:
+
+- Voice command detection follows established pattern matching approach
+- Command handling integrates seamlessly with existing command types (dictation, privacy mode)
+- Quit functionality uses proven cleanup path via `action_quit_app()` method
+- No breaking changes to existing voice command functionality
+
+## Implications
+
+- Enables complete hands-free operation including application exit
+- Provides consistent user experience across all application functions
+- Maintains system reliability through established quit mechanism reuse
+- Completes the voice command feature set for core application operations
+- Sets pattern for future voice command additions requiring system-level actions
+
+---

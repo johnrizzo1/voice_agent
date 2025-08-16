@@ -1,12 +1,19 @@
 """
 Main conversation manager and VoiceAgent class.
+
+This module now serves as a compatibility layer that delegates to the new
+VoiceAgentOrchestrator while maintaining the original API for backward compatibility.
 """
 
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Callable
+from typing import Optional, Callable
 
+# Import the new orchestrator
+from .voice_agent_orchestrator import VoiceAgentOrchestrator
+
+# Legacy imports for direct access (backward compatibility)
 from .audio_manager import AudioManager
 from .config import Config
 from .llm_service import LLMService
@@ -20,14 +27,25 @@ StateCallback = Callable[[str, str, Optional[str]], None]
 
 class VoiceAgent:
     """
-    Main Voice Agent class that orchestrates all components.
+    Main Voice Agent class - now a compatibility wrapper around VoiceAgentOrchestrator.
 
-    This class manages the complete voice interaction pipeline:
-    - Audio input/output
+    This class maintains the original API while delegating to the new orchestrator
+    that includes multi-agent capabilities. All existing functionality is preserved
+    while gaining access to multi-agent routing when enabled.
+
+    Features preserved from original:
+    - Complete voice interaction pipeline
+    - Audio input/output management
     - Speech-to-text conversion
     - Language model processing
     - Tool execution
     - Text-to-speech synthesis
+
+    New features (when multi-agent enabled):
+    - Intelligent task routing to specialized agents
+    - Multi-agent conversation management
+    - Agent handoff and context sharing
+    - Load balancing across agents
     """
 
     def __init__(
@@ -43,47 +61,124 @@ class VoiceAgent:
         Args:
             config: Configuration object
             config_path: Path to configuration file (if config not provided)
+            text_only: Force text-only mode (disables audio pipeline)
+            state_callback: Optional callback for pipeline state changes
         """
         self.logger = logging.getLogger(__name__)
 
-        # Load configuration
-        if config:
-            self.config = config
-            self._config_path: Optional[Path] = None
-        elif config_path:
-            self.config = Config.load(config_path)
-            self._config_path = config_path
-        else:
-            # Use default config (remember path for persistence of UI toggles)
-            default_config_path = (
-                Path(__file__).parent.parent / "config" / "default.yaml"
-            )
-            self.config = Config.load(default_config_path)
-            self._config_path = default_config_path
-
-        # Mode flags
-        ui_cfg = getattr(self.config, "ui", None)
-        force_text_only_cfg = (
-            getattr(ui_cfg, "force_text_only", False) if ui_cfg else False
+        # Create and delegate to the orchestrator
+        self._orchestrator = VoiceAgentOrchestrator(
+            config=config,
+            config_path=config_path,
+            text_only=text_only,
+            state_callback=state_callback,
         )
-        self.text_only = text_only or force_text_only_cfg
 
-        # Optional pipeline state callback (component, state, message)
-        self._state_callback = state_callback
+        # For backward compatibility, expose some orchestrator attributes
+        self.config = self._orchestrator.config
+        self._config_path = self._orchestrator._config_path
+        self.text_only = self._orchestrator.text_only
+        self.multi_agent_enabled = self._orchestrator.multi_agent_enabled
+        self._state_callback = self._orchestrator._state_callback
 
-        # Initialize component placeholders
-        self.audio_manager: Optional[AudioManager] = None
-        self.stt_service: Optional[STTService] = None
-        self.tts_service: Optional[TTSService] = None
-        self.llm_service: Optional[LLMService] = None
-        self.tool_executor: Optional[ToolExecutor] = None
+        # Component references (for backward compatibility)
+        self.audio_manager = None
+        self.stt_service = None
+        self.tts_service = None
+        self.llm_service = None
+        self.tool_executor = None
 
         # Conversation state
-        self.conversation_history: List[Dict[str, Any]] = []
+        self.conversation_history = []
         self.is_running = False
 
-        # Setup logging
-        self._setup_logging()
+        self.logger.info(
+            f"VoiceAgent initialized (multi-agent: {self.multi_agent_enabled})"
+        )
+
+    def _setup_logging(self) -> None:
+        """Setup logging configuration (delegated to orchestrator)."""
+        return self._orchestrator._setup_logging()
+
+    async def initialize(self) -> None:
+        """Initialize all components (delegated to orchestrator)."""
+        await self._orchestrator.initialize()
+
+        # Update component references for backward compatibility
+        self.audio_manager = self._orchestrator.audio_manager
+        self.stt_service = self._orchestrator.stt_service
+        self.tts_service = self._orchestrator.tts_service
+        self.llm_service = self._orchestrator.llm_service
+        self.tool_executor = self._orchestrator.tool_executor
+        self.conversation_history = self._orchestrator.conversation_history
+
+    async def start(self) -> None:
+        """Start the voice agent main loop (delegated to orchestrator)."""
+        await self._orchestrator.start()
+        self.is_running = self._orchestrator.is_running
+
+    async def stop(self) -> None:
+        """Stop the voice agent and cleanup resources (delegated to orchestrator)."""
+        await self._orchestrator.stop()
+        self.is_running = self._orchestrator.is_running
+
+    def set_state_callback(self, callback: Optional["StateCallback"]) -> None:
+        """Install or replace the pipeline state callback (delegated to orchestrator)."""
+        self._orchestrator.set_state_callback(callback)
+        self._state_callback = callback
+
+    async def process_text(self, text: str) -> str:
+        """
+        Process text input without audio (delegated to orchestrator).
+
+        Args:
+            text: Input text to process
+
+        Returns:
+            Agent response text
+        """
+        response = await self._orchestrator.process_text(text)
+
+        # Sync conversation history for backward compatibility
+        self.conversation_history = self._orchestrator.conversation_history
+
+        return response
+
+    # Additional methods for backward compatibility and orchestrator access
+
+    def get_orchestrator_info(self):
+        """Get information about the orchestrator and its components."""
+        return self._orchestrator.get_orchestrator_info()
+
+    def enable_multi_agent_mode(self) -> None:
+        """Enable multi-agent mode."""
+        self._orchestrator.enable_multi_agent_mode()
+        self.multi_agent_enabled = self._orchestrator.multi_agent_enabled
+
+    def disable_multi_agent_mode(self) -> None:
+        """Disable multi-agent mode."""
+        self._orchestrator.disable_multi_agent_mode()
+        self.multi_agent_enabled = self._orchestrator.multi_agent_enabled
+
+    @property
+    def orchestrator(self) -> VoiceAgentOrchestrator:
+        """Access to the underlying orchestrator (for advanced use cases)."""
+        return self._orchestrator
+
+    # Legacy method compatibility
+    def _setup_logging(self) -> None:
+        """Setup logging configuration (legacy compatibility)."""
+        return self._orchestrator._setup_logging()
+
+    def _update_history(self, user_input: str, agent_response: str) -> None:
+        """Update conversation history (legacy compatibility)."""
+        self._orchestrator._update_history(user_input, agent_response)
+        # Sync for backward compatibility
+        self.conversation_history = self._orchestrator.conversation_history
+
+    async def _main_loop(self) -> None:
+        """Main conversation loop (legacy compatibility)."""
+        await self._orchestrator._main_loop()
 
     def _setup_logging(self) -> None:
         """Setup logging configuration."""

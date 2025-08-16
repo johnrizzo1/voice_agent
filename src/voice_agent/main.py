@@ -74,8 +74,32 @@ def _locate_default_config() -> Path:
     is_flag=True,
     help="(Deprecated) Explicitly launch Text UI (now default).",
 )
-def main(config: str | None, debug: bool, no_audio: bool, cli: bool, tui: bool):
+@click.option(
+    "--multi-agent",
+    is_flag=True,
+    help="Enable multi-agent mode (overrides config setting)",
+)
+@click.option(
+    "--single-agent",
+    is_flag=True,
+    help="Force single-agent mode (overrides config setting)",
+)
+def main(
+    config: str | None,
+    debug: bool,
+    no_audio: bool,
+    cli: bool,
+    tui: bool,
+    multi_agent: bool,
+    single_agent: bool,
+):
     """Start the Voice Agent (package entrypoint)."""
+
+    # Validate mutually exclusive options
+    if multi_agent and single_agent:
+        click.echo("❌ Cannot specify both --multi-agent and --single-agent.")
+        return
+
     if config:
         config_path = Path(config)
         if not config_path.exists():
@@ -101,6 +125,14 @@ def main(config: str | None, debug: bool, no_audio: bool, cli: bool, tui: bool):
             agent_config.audio.input_device = None
             agent_config.audio.output_device = None
 
+        # Handle multi-agent mode flags
+        if multi_agent:
+            agent_config.multi_agent.enabled = True
+            click.echo("🤖 Multi-agent mode enabled via command line")
+        elif single_agent:
+            agent_config.multi_agent.enabled = False
+            click.echo("🔧 Single-agent mode forced via command line")
+
         # Interface mode selection (TUI is now default unless --cli provided)
         if tui:
             click.echo("⚠️  '--tui' flag is no longer required (TUI is the default).")
@@ -124,7 +156,21 @@ def main(config: str | None, debug: bool, no_audio: bool, cli: bool, tui: bool):
 
         agent = VoiceAgent(config=agent_config)
 
+        # Display configuration info
         click.echo(f"Using config: {config_path}")
+        click.echo(
+            f"🧠 Agent mode: {'Multi-agent' if agent.multi_agent_enabled else 'Single-agent'}"
+        )
+
+        if agent.multi_agent_enabled:
+            click.echo(f"   ├─ Default agent: {agent_config.multi_agent.default_agent}")
+            click.echo(
+                f"   ├─ Routing strategy: {agent_config.multi_agent.routing_strategy}"
+            )
+            click.echo(
+                f"   └─ Available agents: {len(agent_config.multi_agent.agents)}"
+            )
+
         if use_tui:
             click.echo("🖥️  Launching Voice Agent TUI...")
             click.echo(" - Type or speak (voice pipeline auto-initializes).")
@@ -132,7 +178,8 @@ def main(config: str | None, debug: bool, no_audio: bool, cli: bool, tui: bool):
             click.echo(" - Ctrl+Q to quit.")
             asyncio.run(_run_tui(agent))
         else:
-            click.echo("🎤 Voice Agent starting (CLI mode)...")
+            mode_desc = "Multi-agent" if agent.multi_agent_enabled else "Single-agent"
+            click.echo(f"🎤 Voice Agent starting (CLI mode - {mode_desc})...")
             click.echo("Press Ctrl+C to stop")
             asyncio.run(agent.start())
 

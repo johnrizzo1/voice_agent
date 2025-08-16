@@ -129,6 +129,11 @@ class AudioManager:
         self.is_speaking = False  # Flag to prevent feedback during TTS
         self.last_speech_end_time = 0.0  # Track when TTS last ended
 
+        # Microphone state management
+        self.is_microphone_muted = False  # User-controlled mute state
+        self.is_microphone_paused = False  # Temporary pause state
+        self.microphone_error = False  # Error state
+
         # Callbacks
         self.audio_callback: Optional[Callable] = None
         self._state_callback = state_callback
@@ -323,8 +328,13 @@ class AudioManager:
             # Non-fatal; keep previous value
             pass
 
-        # Only record if we're not speaking (prevent feedback)
-        if self.is_recording and not self.is_speaking:
+        # Only record if we're not speaking (prevent feedback) and microphone is not muted/paused
+        if (
+            self.is_recording
+            and not self.is_speaking
+            and not self.is_microphone_muted
+            and not self.is_microphone_paused
+        ):
             self.input_buffer.append(in_data)
 
             # Call external callback if set
@@ -650,6 +660,58 @@ class AudioManager:
         """Clear the audio input buffer to remove any residual audio."""
         self.input_buffer.clear()
         self.logger.debug("Audio input buffer cleared")
+
+    def mute_microphone(self) -> None:
+        """Mute the microphone (user-controlled)."""
+        if not self.is_microphone_muted:
+            self.is_microphone_muted = True
+            self.logger.info("Microphone muted by user")
+            self._emit_state("audio_input", "muted", "Microphone muted")
+
+    def unmute_microphone(self) -> None:
+        """Unmute the microphone."""
+        if self.is_microphone_muted:
+            self.is_microphone_muted = False
+            self.logger.info("Microphone unmuted by user")
+            if self.input_stream:
+                self._emit_state("audio_input", "ready", "Microphone ready")
+            else:
+                self._emit_state("audio_input", "disabled", "No input device")
+
+    def toggle_microphone_mute(self) -> bool:
+        """Toggle microphone mute state. Returns new mute state."""
+        if self.is_microphone_muted:
+            self.unmute_microphone()
+        else:
+            self.mute_microphone()
+        return self.is_microphone_muted
+
+    def pause_microphone(self) -> None:
+        """Temporarily pause microphone input (for dictation pausing)."""
+        if not self.is_microphone_paused:
+            self.is_microphone_paused = True
+            self.logger.debug("Microphone paused")
+            self._emit_state("audio_input", "paused", "Microphone paused")
+
+    def resume_microphone(self) -> None:
+        """Resume microphone input after pause."""
+        if self.is_microphone_paused:
+            self.is_microphone_paused = False
+            self.logger.debug("Microphone resumed")
+            if not self.is_microphone_muted and self.input_stream:
+                self._emit_state("audio_input", "ready", "Microphone ready")
+
+    def get_microphone_state(self) -> dict:
+        """Get current microphone state information."""
+        return {
+            "is_muted": self.is_microphone_muted,
+            "is_paused": self.is_microphone_paused,
+            "is_recording": self.is_recording,
+            "is_speaking": self.is_speaking,
+            "has_error": self.microphone_error,
+            "input_available": self.input_stream is not None,
+            "last_level": self.last_level,
+        }
 
     def get_device_info(self) -> dict:
         """

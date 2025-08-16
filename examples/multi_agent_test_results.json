@@ -1,0 +1,642 @@
+{
+  "test_timestamp": "2025-08-15 17:54:53",
+  "test_results": {
+    "configuration": {
+      "name": "multi_agent_configuration",
+      "subtests": [
+        {
+          "name": "multi_agent_config_load",
+          "success": true,
+          "details": {
+            "config_loaded": true,
+            "multi_agent_enabled": true,
+            "has_agents": true,
+            "has_routing_rules": true,
+            "has_default_agent": true,
+            "routing_strategy_valid": true
+          }
+        },
+        {
+          "name": "multi_agent_validation",
+          "success": true,
+          "details": {
+            "validation_issues": [],
+            "issue_count": 0
+          }
+        }
+      ],
+      "success": true
+    },
+    "initialization": {
+      "name": "multi_agent_initialization",
+      "subtests": [
+        {
+          "name": "multi_agent_orchestrator_init",
+          "success": true,
+          "details": {
+            "orchestrator_initialized": true,
+            "multi_agent_enabled": true,
+            "text_only_mode": true,
+            "multi_agent_service_available": true,
+            "llamaindex_service_available": true,
+            "llm_service_ready": true,
+            "tools_ready": true,
+            "initialization_time": 1.0642108917236328,
+            "orchestrator_info": {
+              "multi_agent_enabled": true,
+              "text_only": true,
+              "is_running": false,
+              "is_initialized": true,
+              "conversation_length": 0,
+              "components": {
+                "audio_manager": false,
+                "stt": false,
+                "tts": false,
+                "llm": true,
+                "tools": true,
+                "conversation": true,
+                "multi_agent_service": true,
+                "llamaindex_service": true
+              },
+              "multi_agent_info": {
+                "multi_agent_enabled": true,
+                "multi_agent_available": true,
+                "is_initialized": true,
+                "service_initialized": true,
+                "message_count": 0,
+                "agent_switches": 0,
+                "workflow_count": 0,
+                "collaboration_count": 0,
+                "routing_stats": {},
+                "active_agents": 5,
+                "router_stats": {
+                  "total_routes": 0,
+                  "routes_per_agent": {},
+                  "registered_agents": 5,
+                  "routing_rules": 12,
+                  "strategy": "hybrid",
+                  "has_embeddings": true,
+                  "current_load": {
+                    "general_agent": 0,
+                    "tool_specialist": 0,
+                    "information_agent": 0,
+                    "utility_agent": 0,
+                    "productivity_agent": 0
+                  }
+                },
+                "agent_status": {
+                  "general_agent": {
+                    "agent_id": "general_agent",
+                    "status": "ready",
+                    "capabilities": [
+                      "tool_execution",
+                      "general_chat",
+                      "conversation_memory"
+                    ],
+                    "active_tasks": 0,
+                    "total_processed": 0,
+                    "success_count": 0,
+                    "error_count": 0,
+                    "avg_response_time": 0.0,
+                    "tools_count": 0,
+                    "last_activity": 1755294894.1375082,
+                    "has_react_agent": true
+                  },
+                  "tool_specialist": {
+                    "agent_id": "tool_specialist",
+                    "status": "ready",
+                    "capabilities": [
+                      "tool_execution",
+                      "system_info",
+                      "file_operations",
+                      "calculations"
+                    ],
+                    "active_tasks": 0,
+                    "total_processed": 0,
+                    "success_count": 0,
+                    "error_count": 0,
+                    "avg_response_time": 0.0,
+                    "tools_count": 0,
+                    "last_activity": 1755294894.182204,
+                    "has_react_agent": true
+                  },
+                  "information_agent": {
+                    "agent_id": "information_agent",
+                    "status": "ready",
+                    "capabilities": [
+                      "weather_info",
+                      "news_info",
+                      "web_search",
+                      "tool_execution",
+                      "conversation_memory"
+                    ],
+                    "active_tasks": 0,
+                    "total_processed": 0,
+                    "success_count": 0,
+                    "error_count": 0,
+                    "avg_response_time": 0.0,
+                    "tools_count": 0,
+                    "last_activity": 1755294894.2218285,
+                    "has_react_agent": true
+                  },
+                  "utility_agent": {
+                    "agent_id": "utility_agent",
+                    "status": "ready",
+                    "capabilities": [
+                      "calculations",
+                      "system_info",
+                      "conversation_memory",
+                      "tool_execution"
+                    ],
+                    "active_tasks": 0,
+                    "total_processed": 0,
+                    "success_count": 0,
+                    "error_count": 0,
+                    "avg_response_time": 0.0,
+                    "tools_count": 0,
+                    "last_activity": 1755294894.2598884,
+                    "has_react_agent": true,
+                    "utility_calls": 0,
+                    "complex_expressions_solved": 0,
+                    "calculation_history_count": 0,
+                    "last_calculation_time": null,
+                    "specialization": "mathematics_utility"
+                  },
+                  "productivity_agent": {
+                    "agent_id": "productivity_agent",
+                    "status": "ready",
+                    "capabilities": [
+                      "tool_execution",
+                      "calendar_management",
+                      "file_operations",
+                      "conversation_memory"
+                    ],
+                    "active_tasks": 0,
+                    "total_processed": 0,
+                    "success_count": 0,
+                    "error_count": 0,
+                    "avg_response_time": 0.0,
+                    "tools_count": 0,
+                    "last_activity": 1755294894.323942,
+                    "has_react_agent": true
+                  }
+                },
+                "context_stats": {
+                  "conversations_created": 0,
+                  "context_slices_created": 0,
+                  "context_retrievals": 0,
+                  "context_cleanups": 0,
+                  "active_conversations": 0,
+                  "agent_contexts": 0,
+                  "total_agent_slices": 0,
+                  "global_context_items": 0,
+                  "context_sharing_groups": 0
+                },
+                "tool_adapter_stats": {
+                  "tools_converted": 4,
+                  "conversions_cached": 16,
+                  "execution_count": 0,
+                  "error_count": 0,
+                  "cached_tools": 4,
+                  "llamaindex_available": true,
+                  "tool_executor_initialized": true
+                },
+                "workflow_stats": {
+                  "workflows_executed": 0,
+                  "workflows_completed": 0,
+                  "workflows_failed": 0,
+                  "total_tasks_executed": 0,
+                  "average_workflow_time": 0.0,
+                  "active_workflows": 0,
+                  "workflow_history_count": 0,
+                  "registered_agents": 5
+                },
+                "communication_stats": {
+                  "messages_sent": 0,
+                  "messages_delivered": 0,
+                  "broadcasts_sent": 0,
+                  "collaborations_initiated": 0,
+                  "average_response_time": 0.0,
+                  "active_communications": 0,
+                  "active_collaborations": 0,
+                  "total_subscribers": 10,
+                  "channel_activity": {
+                    "coordination": 5,
+                    "data_sharing": 0,
+                    "status_updates": 5,
+                    "collaboration": 0,
+                    "emergency": 0
+                  },
+                  "queued_messages": 0
+                },
+                "delegation_stats": {
+                  "delegations_made": 0,
+                  "successful_delegations": 0,
+                  "failed_delegations": 0,
+                  "average_delegation_time": 0.0,
+                  "pattern_usage": {
+                    "capability_based": 0,
+                    "load_balanced": 0,
+                    "expertise_weighted": 0,
+                    "collaborative": 0,
+                    "hierarchical": 0,
+                    "consensus": 0
+                  },
+                  "tracked_agents": 0,
+                  "delegation_history_count": 0,
+                  "agent_performance_summary": {}
+                },
+                "enhanced_features": {
+                  "workflow_orchestration": true,
+                  "inter_agent_communication": true,
+                  "enhanced_delegation": true,
+                  "context_preservation": true,
+                  "collaboration_support": true,
+                  "multi_step_workflows": true
+                }
+              }
+            }
+          }
+        }
+      ],
+      "success": true
+    },
+    "agent_registration": {
+      "name": "agent_registration",
+      "subtests": [
+        {
+          "name": "multi_agent_registration",
+          "success": true,
+          "details": {
+            "has_active_agents": true,
+            "has_routing_stats": true,
+            "service_initialized": true,
+            "active_agents": 5,
+            "multi_agent_info": {
+              "multi_agent_enabled": true,
+              "multi_agent_available": true,
+              "is_initialized": true,
+              "service_initialized": true,
+              "message_count": 0,
+              "agent_switches": 0,
+              "workflow_count": 0,
+              "collaboration_count": 0,
+              "routing_stats": {},
+              "active_agents": 5,
+              "router_stats": {
+                "total_routes": 0,
+                "routes_per_agent": {},
+                "registered_agents": 5,
+                "routing_rules": 12,
+                "strategy": "hybrid",
+                "has_embeddings": true,
+                "current_load": {
+                  "general_agent": 0,
+                  "tool_specialist": 0,
+                  "information_agent": 0,
+                  "utility_agent": 0,
+                  "productivity_agent": 0
+                }
+              },
+              "agent_status": {
+                "general_agent": {
+                  "agent_id": "general_agent",
+                  "status": "ready",
+                  "capabilities": [
+                    "tool_execution",
+                    "general_chat",
+                    "conversation_memory"
+                  ],
+                  "active_tasks": 0,
+                  "total_processed": 0,
+                  "success_count": 0,
+                  "error_count": 0,
+                  "avg_response_time": 0.0,
+                  "tools_count": 0,
+                  "last_activity": 1755294894.1375082,
+                  "has_react_agent": true
+                },
+                "tool_specialist": {
+                  "agent_id": "tool_specialist",
+                  "status": "ready",
+                  "capabilities": [
+                    "tool_execution",
+                    "system_info",
+                    "file_operations",
+                    "calculations"
+                  ],
+                  "active_tasks": 0,
+                  "total_processed": 0,
+                  "success_count": 0,
+                  "error_count": 0,
+                  "avg_response_time": 0.0,
+                  "tools_count": 0,
+                  "last_activity": 1755294894.182204,
+                  "has_react_agent": true
+                },
+                "information_agent": {
+                  "agent_id": "information_agent",
+                  "status": "ready",
+                  "capabilities": [
+                    "weather_info",
+                    "news_info",
+                    "web_search",
+                    "tool_execution",
+                    "conversation_memory"
+                  ],
+                  "active_tasks": 0,
+                  "total_processed": 0,
+                  "success_count": 0,
+                  "error_count": 0,
+                  "avg_response_time": 0.0,
+                  "tools_count": 0,
+                  "last_activity": 1755294894.2218285,
+                  "has_react_agent": true
+                },
+                "utility_agent": {
+                  "agent_id": "utility_agent",
+                  "status": "ready",
+                  "capabilities": [
+                    "calculations",
+                    "system_info",
+                    "conversation_memory",
+                    "tool_execution"
+                  ],
+                  "active_tasks": 0,
+                  "total_processed": 0,
+                  "success_count": 0,
+                  "error_count": 0,
+                  "avg_response_time": 0.0,
+                  "tools_count": 0,
+                  "last_activity": 1755294894.2598884,
+                  "has_react_agent": true,
+                  "utility_calls": 0,
+                  "complex_expressions_solved": 0,
+                  "calculation_history_count": 0,
+                  "last_calculation_time": null,
+                  "specialization": "mathematics_utility"
+                },
+                "productivity_agent": {
+                  "agent_id": "productivity_agent",
+                  "status": "ready",
+                  "capabilities": [
+                    "tool_execution",
+                    "calendar_management",
+                    "file_operations",
+                    "conversation_memory"
+                  ],
+                  "active_tasks": 0,
+                  "total_processed": 0,
+                  "success_count": 0,
+                  "error_count": 0,
+                  "avg_response_time": 0.0,
+                  "tools_count": 0,
+                  "last_activity": 1755294894.323942,
+                  "has_react_agent": true
+                }
+              },
+              "context_stats": {
+                "conversations_created": 0,
+                "context_slices_created": 0,
+                "context_retrievals": 0,
+                "context_cleanups": 0,
+                "active_conversations": 0,
+                "agent_contexts": 0,
+                "total_agent_slices": 0,
+                "global_context_items": 0,
+                "context_sharing_groups": 0
+              },
+              "tool_adapter_stats": {
+                "tools_converted": 4,
+                "conversions_cached": 16,
+                "execution_count": 0,
+                "error_count": 0,
+                "cached_tools": 4,
+                "llamaindex_available": true,
+                "tool_executor_initialized": true
+              },
+              "workflow_stats": {
+                "workflows_executed": 0,
+                "workflows_completed": 0,
+                "workflows_failed": 0,
+                "total_tasks_executed": 0,
+                "average_workflow_time": 0.0,
+                "active_workflows": 0,
+                "workflow_history_count": 0,
+                "registered_agents": 5
+              },
+              "communication_stats": {
+                "messages_sent": 0,
+                "messages_delivered": 0,
+                "broadcasts_sent": 0,
+                "collaborations_initiated": 0,
+                "average_response_time": 0.0,
+                "active_communications": 0,
+                "active_collaborations": 0,
+                "total_subscribers": 10,
+                "channel_activity": {
+                  "coordination": 5,
+                  "data_sharing": 0,
+                  "status_updates": 5,
+                  "collaboration": 0,
+                  "emergency": 0
+                },
+                "queued_messages": 0
+              },
+              "delegation_stats": {
+                "delegations_made": 0,
+                "successful_delegations": 0,
+                "failed_delegations": 0,
+                "average_delegation_time": 0.0,
+                "pattern_usage": {
+                  "capability_based": 0,
+                  "load_balanced": 0,
+                  "expertise_weighted": 0,
+                  "collaborative": 0,
+                  "hierarchical": 0,
+                  "consensus": 0
+                },
+                "tracked_agents": 0,
+                "delegation_history_count": 0,
+                "agent_performance_summary": {}
+              },
+              "enhanced_features": {
+                "workflow_orchestration": true,
+                "inter_agent_communication": true,
+                "enhanced_delegation": true,
+                "context_preservation": true,
+                "collaboration_support": true,
+                "multi_step_workflows": true
+              }
+            }
+          }
+        }
+      ],
+      "success": true
+    },
+    "agent_routing": {
+      "name": "agent_routing",
+      "subtests": [
+        {
+          "name": "agent_routing_tests",
+          "success": true,
+          "details": {
+            "success_rate": 0.75,
+            "routing_tests": 4,
+            "successful_tests": 3,
+            "results": [
+              {
+                "query": "What's the weather like today?",
+                "expected_type": "information",
+                "description": "Weather query",
+                "response_length": 295,
+                "processing_time": 7.359529495239258,
+                "success": true,
+                "checks": {
+                  "response_generated": true,
+                  "response_not_empty": true,
+                  "reasonable_length": true,
+                  "processing_time_reasonable": true
+                }
+              },
+              {
+                "query": "Calculate 15 times 23",
+                "expected_type": "calculation",
+                "description": "Math query",
+                "response_length": 3,
+                "processing_time": 5.1599977016448975,
+                "success": false,
+                "checks": {
+                  "response_generated": true,
+                  "response_not_empty": true,
+                  "reasonable_length": false,
+                  "processing_time_reasonable": true
+                }
+              },
+              {
+                "query": "Create a file called test.txt",
+                "expected_type": "productivity",
+                "description": "File operation",
+                "response_length": 331,
+                "processing_time": 7.791504621505737,
+                "success": true,
+                "checks": {
+                  "response_generated": true,
+                  "response_not_empty": true,
+                  "reasonable_length": true,
+                  "processing_time_reasonable": true
+                }
+              },
+              {
+                "query": "Hello, how are you?",
+                "expected_type": "general",
+                "description": "General conversation",
+                "response_length": 38,
+                "processing_time": 4.906696319580078,
+                "success": true,
+                "checks": {
+                  "response_generated": true,
+                  "response_not_empty": true,
+                  "reasonable_length": true,
+                  "processing_time_reasonable": true
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "success": true
+    },
+    "agent_handoffs": {
+      "name": "agent_handoffs",
+      "subtests": [
+        {
+          "name": "agent_handoff_tests",
+          "success": true,
+          "details": {
+            "success_rate": 1.0,
+            "handoff_steps": 3,
+            "successful_steps": 3,
+            "conversation_flow": [
+              {
+                "step": 1,
+                "query": "Calculate 25 * 30",
+                "step_description": "Initial calculation",
+                "response_generated": true,
+                "processing_time": 3.166275978088379,
+                "context_preserved": true,
+                "success": true
+              },
+              {
+                "step": 2,
+                "query": "Now save that result to a file",
+                "step_description": "File operation with context",
+                "response_generated": true,
+                "processing_time": 9.98842978477478,
+                "context_preserved": true,
+                "success": true
+              },
+              {
+                "step": 3,
+                "query": "What did we just calculate?",
+                "step_description": "Context recall",
+                "response_generated": true,
+                "processing_time": 0.886204719543457,
+                "context_preserved": true,
+                "success": true
+              }
+            ],
+            "context_preservation": [
+              {
+                "user": "Calculate 25 * 30",
+                "agent": "The result of 25 multiplied by 30 is 750."
+              },
+              {
+                "user": "Now save that result to a file",
+                "agent": "I'm general_agent, but I'm currently unable to process your request properly. The multi-agent system is not fully operational.\n\n\ud83d\udd04 **Task transferred from general_agent to general_agent**\n*Reason: fallback_mode*\n*Context preserved: \u2705*\n\n750"
+              },
+              {
+                "user": "What did we just calculate?",
+                "agent": "We calculated that 25 multiplied by 30 is equal to 750."
+              }
+            ]
+          }
+        }
+      ],
+      "success": true
+    },
+    "performance": {
+      "name": "multi_agent_performance",
+      "subtests": [
+        {
+          "name": "concurrent_processing",
+          "success": false,
+          "details": {
+            "total_queries": 4,
+            "successful_responses": 1,
+            "error_count": 0,
+            "total_time": 12.710634231567383,
+            "average_time_per_query": 3.1776585578918457,
+            "checks": {
+              "all_queries_processed": true,
+              "most_successful": false,
+              "reasonable_total_time": true,
+              "low_error_rate": true
+            }
+          }
+        }
+      ],
+      "success": false
+    }
+  },
+  "overall_metrics": {
+    "total_subtests": 7,
+    "successful_subtests": 6,
+    "subtest_success_rate": 0.8571428571428571,
+    "main_test_success_rate": 0.8333333333333334,
+    "overall_success_rate": 0.8452380952380952,
+    "production_ready": true,
+    "tests_passed": 5,
+    "total_tests": 6
+  }
+}

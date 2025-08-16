@@ -47,6 +47,9 @@ tools:
     - calculator
     - weather
     - file_ops
+    - web_search
+    - news
+    - calendar
   disabled: []
 
 conversation:
@@ -69,3 +72,292 @@ ui:
   enable_animations: true # Allow ACTIVE blinking / subtle effects
   enable_audio: false # Future hybrid mode (voice inside TUI)
   keymap_overrides: {} # Example: {"f5": "clear_chat"}
+
+# Multi-agent system configuration
+multi_agent:
+  enabled: false # Feature flag - set to true to enable multi-agent functionality
+  default_agent: "general_agent"
+  routing_strategy: "hybrid" # hybrid | rules_only | embeddings_only | llm_fallback
+  confidence_threshold: 0.7
+  max_concurrent_agents: 5
+  context_sharing_enabled: true
+  context_window_size: 4000
+  embedding_model: "nomic-embed-text"
+
+  # Enhanced multi-agent features
+  workflow_orchestration:
+    enabled: true
+    max_concurrent_workflows: 3
+    default_timeout: 300 # seconds
+    enable_parallel_execution: true
+    enable_pipeline_execution: true
+    task_dependency_timeout: 60
+
+  inter_agent_communication:
+    enabled: true
+    message_queue_size: 1000
+    collaboration_timeout: 120
+    broadcast_enabled: true
+    priority_messaging: true
+
+  enhanced_delegation:
+    enabled: true
+    patterns:
+      - "capability_based"
+      - "load_balanced"
+      - "expertise_weighted"
+      - "collaborative"
+      - "hierarchical"
+      - "consensus"
+    consensus_threshold: 0.6
+    collaboration_min_agents: 2
+    expertise_weights:
+      weather_info: 0.9
+      calculations: 0.95
+      file_operations: 0.85
+      web_search: 0.8
+
+  context_preservation:
+    enhanced_handoff: true
+    context_compression: true
+    handoff_metadata: true
+    preserve_tool_states: true
+    context_validation: true
+
+  advanced_features:
+    status_reporting: true
+    result_aggregation: true
+    collaborative_reasoning: true
+    workflow_monitoring: true
+    performance_metrics: true
+
+  # Agent definitions
+  agents:
+    general_agent:
+      type: "GeneralAgent"
+      capabilities:
+        - "general_chat"
+        - "tool_execution"
+        - "conversation_memory"
+      tools:
+        - "calculator"
+        - "weather"
+        - "file_ops"
+      system_prompt: "You are a helpful general-purpose AI assistant."
+      max_concurrent_tasks: 5
+      timeout_seconds: 30.0
+
+    tool_specialist:
+      type: "ToolSpecialistAgent"
+      capabilities:
+        - "tool_execution"
+        - "file_operations"
+        - "calculations"
+        - "system_info"
+      tools:
+        - "calculator"
+        - "file_ops"
+        - "weather"
+        - "web_search"
+      system_prompt: "You are a specialist in tool execution and file operations. Be precise and thorough."
+      max_concurrent_tasks: 3
+      timeout_seconds: 60.0
+
+    information_agent:
+      type: "InformationAgent"
+      capabilities:
+        - "weather_info"
+        - "web_search"
+        - "news_info"
+        - "tool_execution"
+        - "conversation_memory"
+      tools:
+        - "weather"
+        - "web_search"
+        - "news"
+      system_prompt: "You are an information specialist focused on retrieving and presenting accurate, up-to-date information from various sources."
+      max_concurrent_tasks: 4
+      timeout_seconds: 45.0
+
+    utility_agent:
+      type: "UtilityAgent"
+      capabilities:
+        - "calculations"
+        - "tool_execution"
+        - "conversation_memory"
+        - "system_info"
+      tools:
+        - "calculator"
+      system_prompt: "You are a UtilityAgent specialized in mathematical calculations and utility functions. Focus on precision, accuracy, and clear explanations of mathematical reasoning."
+      max_concurrent_tasks: 4
+      timeout_seconds: 30.0
+
+    productivity_agent:
+      type: "ProductivityAgent"
+      capabilities:
+        - "file_operations"
+        - "calendar_management"
+        - "task_organization"
+        - "workflow_coordination"
+        - "tool_execution"
+        - "conversation_memory"
+      tools:
+        - "file_ops"
+        - "calendar"
+      system_prompt: "You are a ProductivityAgent specialized in file management, calendar operations, and task organization. Help users stay organized and efficient."
+      max_concurrent_tasks: 3
+      timeout_seconds: 45.0
+
+  # Routing rules configuration
+  routing_rules:
+    - name: "weather_requests"
+      target_agent: "information_agent"
+      patterns:
+        - "weather"
+        - "forecast"
+        - "temperature"
+        - "rain"
+        - "snow"
+        - "storm"
+        - "sunny"
+        - "cloudy"
+        - "climate"
+      capabilities:
+        - "weather_info"
+      priority: 1
+      confidence: 0.9
+
+    - name: "web_search_requests"
+      target_agent: "information_agent"
+      patterns:
+        - "search"
+        - "find"
+        - "look up"
+        - "google"
+        - "research"
+        - "information about"
+        - "tell me about"
+      capabilities:
+        - "web_search"
+      priority: 1
+      confidence: 0.85
+
+    - name: "news_requests"
+      target_agent: "information_agent"
+      patterns:
+        - "news"
+        - "current events"
+        - "latest"
+        - "recent"
+        - "what happened"
+        - "breaking news"
+        - "headlines"
+      capabilities:
+        - "news_info"
+      priority: 1
+      confidence: 0.9
+
+    - name: "utility_calculation_requests"
+      target_agent: "utility_agent"
+      patterns:
+        - "calculate"
+        - "compute"
+        - "math"
+        - "equation"
+        - "sum"
+        - "multiply"
+        - "divide"
+        - "subtract"
+        - "formula"
+        - "solve"
+        - "arithmetic"
+        - "percentage"
+        - "ratio"
+      capabilities:
+        - "calculations"
+      priority: 1
+      confidence: 0.9
+
+    - name: "complex_calculation_requests"
+      target_agent: "utility_agent"
+      patterns:
+        - "mathematical"
+        - "algebra"
+        - "calculus"
+        - "geometry"
+        - "trigonometry"
+        - "statistics"
+        - "probability"
+        - "logarithm"
+        - "exponential"
+      capabilities:
+        - "calculations"
+      priority: 1
+      confidence: 0.85
+
+    - name: "file_operations"
+      target_agent: "tool_specialist"
+      patterns:
+        - "file"
+        - "directory"
+        - "folder"
+        - "path"
+        - "save"
+        - "load"
+        - "read"
+        - "write"
+      capabilities:
+        - "file_operations"
+      priority: 2
+      confidence: 0.85
+
+    - name: "productivity_requests"
+      target_agent: "productivity_agent"
+      patterns:
+        - "calendar"
+        - "schedule"
+        - "appointment"
+        - "meeting"
+        - "task"
+        - "organize"
+        - "plan"
+        - "reminder"
+        - "todo"
+        - "deadline"
+      capabilities:
+        - "calendar_management"
+        - "task_organization"
+      priority: 1
+      confidence: 0.85
+
+    - name: "workflow_requests"
+      target_agent: "productivity_agent"
+      patterns:
+        - "workflow"
+        - "process"
+        - "automate"
+        - "sequence"
+        - "steps"
+        - "pipeline"
+        - "chain"
+        - "coordinate"
+      capabilities:
+        - "workflow_coordination"
+      priority: 1
+      confidence: 0.8
+
+    - name: "general_conversation"
+      target_agent: "general_agent"
+      patterns:
+        - "hello"
+        - "hi"
+        - "how are you"
+        - "tell me"
+        - "explain"
+        - "what is"
+        - "help"
+        - "thanks"
+      capabilities:
+        - "general_chat"
+      priority: 8
+      confidence: 0.6

@@ -1,0 +1,235 @@
+audio:
+  chunk_size: 1024
+  input_device: null
+  max_silence_frames: 15
+  min_speech_frames: 8
+  output_device: null
+  sample_rate: 16000
+  speech_detection_cooldown: 2.0
+  vad_aggressiveness: 3
+conversation:
+  context_window: 4096
+  interrupt_enabled: true
+  max_history: 50
+llm:
+  max_tokens: 2048
+  model: llama3.2:3b
+  provider: ollama
+  temperature: 0.7
+logging:
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  level: INFO
+multi_agent:
+  agents:
+    general_agent:
+      capabilities:
+        - general_chat
+        - tool_execution
+        - conversation_memory
+      max_concurrent_tasks: 5
+      system_prompt: You are a helpful general-purpose AI assistant.
+      timeout_seconds: 30.0
+      tools:
+        - calculator
+        - weather
+        - file_ops
+      type: GeneralAgent
+    information_agent:
+      capabilities:
+        - weather_info
+        - web_search
+        - news_info
+        - tool_execution
+        - conversation_memory
+      max_concurrent_tasks: 4
+      system_prompt:
+        You are an information specialist focused on retrieving and presenting
+        accurate, up-to-date information from various sources.
+      timeout_seconds: 45.0
+      tools:
+        - weather
+        - web_search
+        - news
+      type: InformationAgent
+    tool_specialist:
+      capabilities:
+        - tool_execution
+        - file_operations
+        - calculations
+        - system_info
+      max_concurrent_tasks: 3
+      system_prompt:
+        You are a specialist in tool execution and file operations. Be
+        precise and thorough.
+      timeout_seconds: 60.0
+      tools:
+        - calculator
+        - file_ops
+        - weather
+        - web_search
+      type: ToolSpecialistAgent
+    utility_agent:
+      capabilities:
+        - calculations
+        - tool_execution
+        - conversation_memory
+        - system_info
+      max_concurrent_tasks: 4
+      system_prompt:
+        You are a UtilityAgent specialized in mathematical calculations
+        and utility functions. Focus on precision, accuracy, and clear explanations
+        of mathematical reasoning.
+      timeout_seconds: 30.0
+      tools:
+        - calculator
+      type: UtilityAgent
+  confidence_threshold: 0.7
+  context_sharing_enabled: true
+  context_window_size: 4000
+  default_agent: general_agent
+  embedding_model: nomic-embed-text
+  enabled: true
+  max_concurrent_agents: 5
+  routing_rules:
+    - capabilities:
+        - weather_info
+      confidence: 0.9
+      name: weather_requests
+      patterns:
+        - weather
+        - forecast
+        - temperature
+        - rain
+        - snow
+        - storm
+        - sunny
+        - cloudy
+        - climate
+      priority: 1
+      target_agent: information_agent
+    - capabilities:
+        - web_search
+      confidence: 0.85
+      name: web_search_requests
+      patterns:
+        - search
+        - find
+        - look up
+        - google
+        - research
+        - information about
+        - tell me about
+      priority: 1
+      target_agent: information_agent
+    - capabilities:
+        - news_info
+      confidence: 0.9
+      name: news_requests
+      patterns:
+        - news
+        - current events
+        - latest
+        - recent
+        - what happened
+        - breaking news
+        - headlines
+      priority: 1
+      target_agent: information_agent
+    - capabilities:
+        - calculations
+      confidence: 0.9
+      name: utility_calculation_requests
+      patterns:
+        - calculate
+        - compute
+        - math
+        - equation
+        - sum
+        - multiply
+        - divide
+        - subtract
+        - formula
+        - solve
+        - arithmetic
+        - percentage
+        - ratio
+      priority: 1
+      target_agent: utility_agent
+    - capabilities:
+        - calculations
+      confidence: 0.85
+      name: complex_calculation_requests
+      patterns:
+        - mathematical
+        - algebra
+        - calculus
+        - geometry
+        - trigonometry
+        - statistics
+        - probability
+        - logarithm
+        - exponential
+      priority: 1
+      target_agent: utility_agent
+    - capabilities:
+        - file_operations
+      confidence: 0.85
+      name: file_operations
+      patterns:
+        - file
+        - directory
+        - folder
+        - path
+        - save
+        - load
+        - read
+        - write
+      priority: 2
+      target_agent: tool_specialist
+    - capabilities:
+        - general_chat
+      confidence: 0.6
+      name: general_conversation
+      patterns:
+        - hello
+        - hi
+        - how are you
+        - tell me
+        - explain
+        - what is
+        - help
+        - thanks
+      priority: 8
+      target_agent: general_agent
+  routing_strategy: rules_only
+stt:
+  language: auto
+  model: whisper-base
+  streaming: true
+tools:
+  disabled: []
+  enabled:
+    - calculator
+    - weather
+    - file_ops
+    - web_search
+    - news
+    - calendar
+tts:
+  bark_voice_preset: v2/en_speaker_1
+  enable_tts_buffer_double_clear: false
+  engine: bark
+  post_tts_cooldown: 0.3
+  speed: 1.0
+  tts_cooldown_margin: 0.25
+  voice: default
+ui:
+  color_scheme: default
+  enable_animations: true
+  enable_audio: false
+  force_text_only: true
+  keymap_overrides: {}
+  max_messages: 500
+  mode: auto
+  refresh_rate: 0.5
+  show_timestamps: true

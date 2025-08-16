@@ -4,7 +4,7 @@ import tensorflow as tf
 print("Is TensorFlow built with CUDA?:", tf.test.is_built_with_cuda())
 
 # List all physical devices, including GPUs
-physical_devices = tf.config.list_physical_devices('GPU')
+physical_devices = tf.config.list_physical_devices("GPU")
 print("Physical devices available:", physical_devices)
 
 # If GPUs are detected, print details
