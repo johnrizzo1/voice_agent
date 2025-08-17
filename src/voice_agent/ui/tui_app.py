@@ -257,7 +257,7 @@ class StatusBar(Static):
         if status.error_message:
             base_parts.append(f"[red]ERR:{status.error_message}[/]")
 
-        # Audio level meter
+        # Audio level meter with color-coded segments
         try:
             level = float(self._get_audio_level())
         except Exception:
@@ -265,8 +265,24 @@ class StatusBar(Static):
         level = max(0.0, min(level, 1.0))
         bar_width = 12
         filled = int(level * bar_width + 0.5)
-        bar = "█" * filled + "░" * (bar_width - filled)
-        meter_text = f"[blue]{bar}[/]{int(level*100):3d}%"
+
+        # Create color-coded bar segments
+        bar_parts = []
+        for i in range(bar_width):
+            if i < filled:
+                # Determine color based on position in bar (level ranges)
+                position_percent = (i + 1) / bar_width
+                if position_percent <= 0.25:  # Bottom quarter: Yellow
+                    bar_parts.append("[yellow]█[/]")
+                elif position_percent <= 0.75:  # Middle 50%: Green
+                    bar_parts.append("[green]█[/]")
+                else:  # Top 25%: Red
+                    bar_parts.append("[red]█[/]")
+            else:
+                bar_parts.append("[dim]░[/]")
+
+        bar = "".join(bar_parts)
+        meter_text = f"{bar}{int(level*100):3d}%"
 
         # Join left side
         left = " | ".join(base_parts)

@@ -13,7 +13,7 @@ audio:
   speech_detection_cooldown: 2.0 # Seconds after TTS before listening resumes
 
   # Audio processing and sensitivity
-  energy_threshold: 800 # Minimum RMS amplitude to consider as potential speech (filters keyboard clicks)
+  energy_threshold: 7000 # Minimum RMS amplitude to consider as potential speech (filters keyboard clicks)
   level_meter_scale: 12000.0 # Scale factor for audio level meter display (affects UI meter sensitivity)
 
   # Barge-in / interruption settings
