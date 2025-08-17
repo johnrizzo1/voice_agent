@@ -352,9 +352,6 @@ class ChatLog(ScrollView):
         # Initialize ScrollView with explicit scrolling enabled
         super().__init__()
 
-        # Simplified approach - let ScrollView handle its own configuration
-        # The previous approach was interfering with Textual's widget system
-
         self.max_messages = max_messages
         self._messages: Deque[ChatMessage] = deque(maxlen=max_messages)
         self._show_timestamps = show_timestamps
@@ -369,82 +366,52 @@ class ChatLog(ScrollView):
         self._match_positions: List[int] = []
         self._current_match_index: int = -1
 
-        # Simplified: No manual scroll state tracking for now
-        # Just focus on auto-scroll to bottom for new messages
+        # Create the content widget that will hold our chat messages
+        self._content_widget = Static("")
+
+    def on_mount(self) -> None:  # type: ignore
+        """Initialize content when the widget is mounted."""
+        self._update_content()
+
+    def compose(self) -> ComposeResult:  # type: ignore
+        """Compose the ScrollView with a Static widget inside for proper scrolling."""
+        yield self._content_widget
 
     def add_message(self, msg: ChatMessage) -> None:
         self._messages.append(msg)
         self._maybe_prune()
-        self.refresh(layout=True)
 
-        # Simplified: Always auto-scroll to bottom for new messages
-        # Debug logging to validate scroll behavior
+        # Update the content widget with the rendered chat messages
+        self._update_content()
+
+        # Simple auto-scroll: just call scroll_end directly like our working test app
         try:
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.debug(
-                f"ChatLog.add_message: attempting auto-scroll, has_scroll_end={hasattr(self, 'scroll_end')}"
-            )
+            if hasattr(self, "scroll_end"):
+                self.scroll_end(animate=False)  # type: ignore
         except Exception:
             pass
 
-        # Always scroll to bottom - no user scroll detection for now
+    def _update_content(self) -> None:
+        """Update the content widget with rendered chat messages."""
+        content = self._render_content()
+        # Try different methods to update the Static widget content
         try:
-            if hasattr(self, "scroll_end"):
-                # Try multiple approaches to ensure scrolling works
-                import asyncio
-
-                asyncio.create_task(self._simple_auto_scroll())
-                try:
-                    import logging
-
-                    logging.getLogger(__name__).debug(
-                        "ChatLog: scheduled simple auto-scroll task"
-                    )
-                except Exception:
-                    pass
-        except Exception as e:
-            try:
-                import logging
-
-                logging.getLogger(__name__).debug(
-                    f"ChatLog: auto-scroll scheduling failed: {e}"
-                )
-            except Exception:
-                pass
-
-    async def _simple_auto_scroll(self) -> None:
-        """Simple auto-scroll to bottom - always scroll when new messages arrive."""
-        try:
-            # Small delay to allow layout to complete
-            await asyncio.sleep(0.1)
-            if hasattr(self, "scroll_end"):
-                self.scroll_end(animate=False)  # type: ignore
-                try:
-                    import logging
-
-                    logging.getLogger(__name__).debug(
-                        "ChatLog: simple auto-scroll executed successfully"
-                    )
-                except Exception:
-                    pass
+            if hasattr(self._content_widget, "update"):
+                self._content_widget.update(content)  # type: ignore
+            elif hasattr(self._content_widget, "renderable"):
+                self._content_widget.renderable = content  # type: ignore
             else:
+                # Fallback: recreate the widget
+                self._content_widget = Static(content)
+                # Force a refresh to show the updated content
                 try:
-                    import logging
-
-                    logging.getLogger(__name__).debug(
-                        "ChatLog: scroll_end method not available"
-                    )
+                    self.refresh(layout=True)
                 except Exception:
                     pass
-        except Exception as e:
+        except Exception:
+            # If all else fails, try to set the content directly
             try:
-                import logging
-
-                logging.getLogger(__name__).debug(
-                    f"ChatLog: simple auto-scroll failed: {e}"
-                )
+                self._content_widget.renderable = content  # type: ignore
             except Exception:
                 pass
 
@@ -452,7 +419,7 @@ class ChatLog(ScrollView):
         self._messages.clear()
         self._pruned_user = 0
         self._pruned_agent = 0
-        self.refresh(layout=True)
+        self._update_content()
 
     def set_filter(self, term: str) -> None:
         """Apply a case-insensitive substring filter and compute match positions."""
@@ -470,7 +437,7 @@ class ChatLog(ScrollView):
         # Record indices within the filtered list for navigation
         self._match_positions = list(range(len(self._filtered_cache)))
         self._current_match_index = 0 if self._match_positions else -1
-        self.refresh(layout=True)
+        self._update_content()
 
     def clear_filter(self) -> None:
         """Clear active filter."""
@@ -479,12 +446,11 @@ class ChatLog(ScrollView):
             self._filtered_cache = []
             self._match_positions = []
             self._current_match_index = -1
-            self.refresh(layout=True)
+            self._update_content()
 
-    def render(self) -> str:  # type: ignore
+    def _render_content(self) -> str:
         """
-        Full render (no manual virtualization) so native ScrollView scrolling & scrollbar
-        can function. Tail auto-follow handled in add_message via scroll_end().
+        Render chat messages for display in the content widget.
         """
         width = self.size.width if hasattr(self.size, "width") else 80
 
@@ -577,7 +543,10 @@ class ChatLog(ScrollView):
 
             if hasattr(self, "scroll_y"):
                 self.scroll_y = new_y  # type: ignore
-                self.refresh(repaint=True, layout=True)
+                try:
+                    self.refresh(repaint=True, layout=True)
+                except Exception:
+                    pass
                 logger.debug(f"ChatLog.force_scroll_down: position set and refreshed")
                 return True
             else:
@@ -608,7 +577,10 @@ class ChatLog(ScrollView):
 
             if hasattr(self, "scroll_y"):
                 self.scroll_y = new_y  # type: ignore
-                self.refresh(repaint=True, layout=True)
+                try:
+                    self.refresh(repaint=True, layout=True)
+                except Exception:
+                    pass
                 logger.debug(f"ChatLog.force_scroll_up: position set and refreshed")
                 return True
             else:
@@ -2382,6 +2354,9 @@ class VoiceAgentTUI(App):
                 "end program",
                 "quit",
                 "exit",
+                "goodbye",
+                "good bye",
+                "bye bye",
                 "shutdown",
                 "close application",
                 "terminate",
@@ -2488,7 +2463,7 @@ class VoiceAgentTUI(App):
                     self.chat.add_message(
                         ChatMessage(
                             role="system",
-                            content="(Privacy Mode ON – audio ignored until 'Privacy Mode Off')",
+                            content="[bold yellow]🔒 PRIVACY MODE ENABLED[/] – Voice input is now ignored until you say 'Privacy Mode Off'",
                         )
                     )
                     if self.settings_panel and self.settings_panel.display:  # type: ignore
@@ -2558,7 +2533,7 @@ class VoiceAgentTUI(App):
         if not self._dictation_mode_active or self._dictation_paused:
             return
         self._dictation_paused = True
-        # Cancel loop
+        # Cancel the dedicated dictation loop - continuous listening will handle paused state
         if self._dictation_task:
             self._dictation_task.cancel()
             try:
@@ -2741,7 +2716,7 @@ class VoiceAgentTUI(App):
         """
         Background continuous listening loop:
           - Runs whenever audio pipeline active & not in dictation
-          - Skips processing while privacy mode is ON
+          - In privacy mode: continues listening but only responds to "privacy mode off"
           - Performs VAD-gated capture → STT → voice command dispatch
           - Normal utterances go directly to LLM + TTS (hands‑free mode)
         """
@@ -2750,12 +2725,8 @@ class VoiceAgentTUI(App):
             return
         while True:
             try:
-                # Respect privacy mode
-                if self._privacy_mode:
-                    await asyncio.sleep(0.3)
-                    continue
-                # Skip while dictation owns microphone
-                if self._dictation_mode_active:
+                # Skip while active (non-paused) dictation owns microphone
+                if self._dictation_mode_active and not self._dictation_paused:
                     await asyncio.sleep(0.1)
                     continue
 
@@ -2777,8 +2748,30 @@ class VoiceAgentTUI(App):
                     if handled:
                         continue
 
+                # In privacy mode, ignore all non-command text
+                if self._privacy_mode:
+                    # Show that we heard but ignored the text
+                    self.chat.add_message(
+                        ChatMessage(
+                            role="system",
+                            content=f"(Privacy mode: ignored '{text[:50]}{'...' if len(text) > 50 else ''}')",
+                        )
+                    )
+                    continue
+
+                # In paused dictation mode, ignore all non-command text
+                if self._dictation_mode_active and self._dictation_paused:
+                    # Show that we heard but ignored the text (similar to privacy mode)
+                    self.chat.add_message(
+                        ChatMessage(
+                            role="system",
+                            content=f"(Dictation paused: ignored '{text[:50]}{'...' if len(text) > 50 else ''}')",
+                        )
+                    )
+                    continue
+
                 # State may have changed after command handling
-                if self._privacy_mode or self._dictation_mode_active:
+                if self._dictation_mode_active:
                     continue
 
                 # Normal conversational turn

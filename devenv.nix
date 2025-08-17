@@ -41,7 +41,7 @@ in
         pyyaml
         requests
         rich
-        textual
+        # textual
         torch
         torchaudio
         transformers
@@ -68,9 +68,10 @@ in
   languages.python.venv.enable = true;
   languages.python.venv.quiet = true;
   languages.python.venv.requirements = ''
-    webrtcvad
-    vosk
-    bark
+    webrtcvad>=2.0.10
+    vosk>=0.3.45
+    bark>=0.1.5
+    textual>=5.3.0
 
     # LlamaIndex Core
     llama-index-core>=0.10.0

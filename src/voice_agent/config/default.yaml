@@ -1,15 +1,30 @@
 # Default configuration for Voice Agent
 audio:
-  input_device: null # Auto-detect
-  output_device: null # Auto-detect
-  sample_rate: 16000
-  chunk_size: 1024
+  # Device configuration
+  input_device: null # Auto-detect microphone (or specific device ID)
+  output_device: null # Auto-detect speakers (or specific device ID)
+  sample_rate: 16000 # Audio sample rate in Hz (16000, 22050, 44100)
+  chunk_size: 1024 # Audio buffer size (512, 1024, 2048)
 
   # VAD / speech detection tuning (adjusted for reduced sensitivity to brief transients like keyboard clicks)
   vad_aggressiveness: 3 # 0-3 (higher = more aggressive filtering of noise)
   min_speech_frames: 20 # Require many consecutive speech frames to avoid keyboard/noise false triggers
   max_silence_frames: 75 # Allow longer pauses for natural thinking (75 frames = ~1.5 seconds)
   speech_detection_cooldown: 2.0 # Seconds after TTS before listening resumes
+
+  # Audio processing and sensitivity
+  energy_threshold: 800 # Minimum RMS amplitude to consider as potential speech (filters keyboard clicks)
+  level_meter_scale: 12000.0 # Scale factor for audio level meter display (affects UI meter sensitivity)
+
+  # Barge-in / interruption settings
+  barge_in_enabled: true # Allow user to interrupt TTS playback by speaking
+  barge_in_energy_threshold: 0.28 # Audio level threshold for barge-in detection (0.0-1.0)
+  barge_in_consecutive_frames: 5 # Number of consecutive high-energy frames needed for barge-in
+
+  # Audio feedback prevention
+  feedback_prevention_enabled: true # Disable microphone during TTS playback
+  buffer_clear_on_playback: true # Clear input buffer when starting TTS playback
+  double_buffer_clear: false # Perform additional buffer clear (enable if experiencing feedback)
 
 stt:
   model: "whisper-base"
@@ -39,7 +54,7 @@ tts:
 llm:
   provider: "ollama"
   model: "llama3.2:3b" # mistral:7b | llama3.2:3b | qwen3:4b
-  temperature: 0.7
+  temperature: 0.5
   max_tokens: 2048
 
 tools:

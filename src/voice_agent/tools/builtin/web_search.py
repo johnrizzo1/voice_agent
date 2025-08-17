@@ -60,6 +60,9 @@ class WebSearchTool(Tool):
         Returns:
             Dictionary containing search results
         """
+        print(
+            f"🔧 [DEBUG] WebSearchTool.execute called with query: '{query}', max_results: {max_results}"
+        )
         try:
             # 1. Attempt Instant Answer
             instant_answer = self._get_duckduckgo_instant_answer(query)
@@ -94,6 +97,7 @@ class WebSearchTool(Tool):
             }
 
         except Exception as e:
+            print(f"🚨 [DEBUG] WebSearchTool error: {e}")
             self.logger.error(f"Web search error: {e}")
             return {"success": False, "result": None, "error": str(e)}
 

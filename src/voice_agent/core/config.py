@@ -18,8 +18,23 @@ class AudioConfig(BaseModel):
     - min_speech_frames: Consecutive (or accumulated) speech frames before confirming speech
     - max_silence_frames: Silence frames after speech to consider utterance ended
     - speech_detection_cooldown: Cooldown (s) after TTS playback before listening resumes
+
+    Audio processing and sensitivity:
+    - energy_threshold: Minimum RMS amplitude to consider as potential speech
+    - level_meter_scale: Scale factor for audio level meter display
+
+    Barge-in / interruption settings:
+    - barge_in_enabled: Allow user to interrupt TTS playback by speaking
+    - barge_in_energy_threshold: Audio level threshold for barge-in detection
+    - barge_in_consecutive_frames: Number of consecutive frames needed for barge-in
+
+    Audio feedback prevention:
+    - feedback_prevention_enabled: Disable microphone during TTS playback
+    - buffer_clear_on_playback: Clear input buffer when starting TTS
+    - double_buffer_clear: Perform additional buffer clear if experiencing feedback
     """
 
+    # Device configuration
     input_device: Optional[int] = None
     output_device: Optional[int] = None
     sample_rate: int = 16000
@@ -30,6 +45,20 @@ class AudioConfig(BaseModel):
     min_speech_frames: int = 5
     max_silence_frames: int = 50
     speech_detection_cooldown: float = 1.0
+
+    # Audio processing and sensitivity
+    energy_threshold: float = 800.0
+    level_meter_scale: float = 12000.0
+
+    # Barge-in / interruption settings
+    barge_in_enabled: bool = True
+    barge_in_energy_threshold: float = 0.28
+    barge_in_consecutive_frames: int = 5
+
+    # Audio feedback prevention
+    feedback_prevention_enabled: bool = True
+    buffer_clear_on_playback: bool = True
+    double_buffer_clear: bool = False
 
 
 class STTConfig(BaseModel):

@@ -35,8 +35,10 @@ try:
     from ..agents import ProductivityAgent, UtilityAgent
 
     MULTI_AGENT_AVAILABLE = True
-except ImportError:
+    print("🔧 [DEBUG] Multi-agent imports successful")
+except ImportError as e:
     MULTI_AGENT_AVAILABLE = False
+    print(f"🚨 [DEBUG] Multi-agent import failed: {e}")
     AgentMessage = None
     AgentResponse = None
     MessageType = None
@@ -489,6 +491,7 @@ class MultiAgentService:
                 if hasattr(route_decision, "target_agent")
                 else route_decision["target_agent"]
             )
+            print(f"🔧 [DEBUG] Routing search to agent: {target_agent_id}")
 
             # Update routing stats
             if target_agent_id not in self.routing_stats:
@@ -498,8 +501,15 @@ class MultiAgentService:
             # Get target agent
             target_agent = self.agents.get(target_agent_id)
             if not target_agent:
+                print(
+                    f"🚨 [DEBUG] Target agent {target_agent_id} not found! Available agents: {list(self.agents.keys())}"
+                )
                 self.logger.error(f"Target agent {target_agent_id} not found")
                 return await self._process_single_agent(user_input)
+
+            print(
+                f"🔧 [DEBUG] Found target agent: {target_agent_id}, status: {target_agent.status}"
+            )
 
             # Process message with agent
             response = await target_agent.process_message(message)
@@ -660,6 +670,9 @@ class MultiAgentService:
 
     async def _process_single_agent(self, user_input: str) -> str:
         """Process message using single-agent mode (fallback)."""
+        print(
+            f"🔧 [DEBUG] Falling back to single-agent mode. LlamaIndex available: {self.llamaindex_service and self.llamaindex_service.is_available}"
+        )
         if self.llamaindex_service and self.llamaindex_service.is_available:
             return await self.llamaindex_service.chat(user_input)
         else:

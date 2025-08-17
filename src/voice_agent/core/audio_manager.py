@@ -322,16 +322,18 @@ class AudioManager:
             samples = np.frombuffer(in_data, dtype=np.int16)
             if samples.size:
                 rms = float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
-                # Scale: speech RMS typically up to ~10000; clamp to 1.0
-                self.last_level = max(0.0, min(rms / 12000.0, 1.0))
+                # Configurable scale: speech RMS typically up to ~10000; clamp to 1.0
+                level_meter_scale = getattr(self.config, "level_meter_scale", 12000.0)
+                self.last_level = max(0.0, min(rms / level_meter_scale, 1.0))
         except Exception:
             # Non-fatal; keep previous value
             pass
 
         # Only record if we're not speaking (prevent feedback) and microphone is not muted/paused
+        feedback_prevention = getattr(self.config, "feedback_prevention_enabled", True)
         if (
             self.is_recording
-            and not self.is_speaking
+            and (not self.is_speaking or not feedback_prevention)
             and not self.is_microphone_muted
             and not self.is_microphone_paused
         ):
@@ -345,21 +347,31 @@ class AudioManager:
                     self.logger.error(f"Error in audio callback: {e}")
         else:
             # While speaking, monitor for possible barge-in (user attempting to interrupt)
-            if self.is_speaking and self._barge_in_callback:
+            if (
+                self.is_speaking
+                and self._barge_in_callback
+                and getattr(self.config, "barge_in_enabled", True)
+            ):
                 try:
-                    # Heuristic: sustained elevated input level while TTS is active
-                    # Use previously computed self.last_level (> ~0.28) for N consecutive callbacks
-                    if self.last_level > 0.28:
+                    # Configurable heuristic: sustained elevated input level while TTS is active
+                    barge_in_threshold = getattr(
+                        self.config, "barge_in_energy_threshold", 0.28
+                    )
+                    barge_in_frames = getattr(
+                        self.config, "barge_in_consecutive_frames", 5
+                    )
+
+                    if self.last_level > barge_in_threshold:
                         self._interrupt_energy_frames += 1
                     else:
                         self._interrupt_energy_frames = 0
                     if (
                         not self._barge_in_triggered
-                        and self._interrupt_energy_frames >= 5
+                        and self._interrupt_energy_frames >= barge_in_frames
                     ):
                         self._barge_in_triggered = True
                         self.logger.info(
-                            "Barge-in detected (user speech during TTS) – requesting interruption"
+                            f"Barge-in detected (user speech during TTS, level={self.last_level:.3f}) – requesting interruption"
                         )
                         try:
                             self._barge_in_callback()
@@ -509,8 +521,9 @@ class AudioManager:
             samples = np.frombuffer(frame_20ms, dtype=np.int16)
             # Root mean square amplitude
             rms = np.sqrt(np.mean(samples.astype(np.float32) ** 2))
-            # Threshold (empirical): ignore frames with rms below ~800 (filters keyboard clicks & low ambient noise)
-            if rms < 800:
+            # Configurable threshold: ignore frames with rms below threshold (filters keyboard clicks & low ambient noise)
+            energy_threshold = getattr(self.config, "energy_threshold", 800.0)
+            if rms < energy_threshold:
                 return False
 
             return self.vad.is_speech(frame_20ms, self.config.sample_rate)
@@ -534,11 +547,19 @@ class AudioManager:
             return
 
         try:
-            # Set speaking flag to prevent audio feedback
-            self.is_speaking = True
-            self.logger.debug(
-                "Audio playback started - input disabled to prevent feedback"
+            # Set speaking flag to prevent audio feedback (if enabled)
+            feedback_prevention = getattr(
+                self.config, "feedback_prevention_enabled", True
             )
+            self.is_speaking = feedback_prevention
+            if feedback_prevention:
+                self.logger.debug(
+                    "Audio playback started - input disabled to prevent feedback"
+                )
+
+            # Clear input buffer if configured
+            if getattr(self.config, "buffer_clear_on_playback", True):
+                self.clear_input_buffer()
 
             # Resample if needed (simple approach for now)
             processed_audio = audio_data
@@ -594,6 +615,13 @@ class AudioManager:
             self.last_speech_end_time = time.time()
             # Clear any residual audio that might have been captured during playback
             self.clear_input_buffer()
+
+            # Optional double buffer clear for stubborn feedback issues
+            if getattr(self.config, "double_buffer_clear", False):
+                await asyncio.sleep(0.1)  # Brief delay
+                self.clear_input_buffer()
+                self.logger.debug("Double buffer clear performed")
+
             # Reset barge-in detection counters
             self._barge_in_triggered = False
             self._interrupt_energy_frames = 0

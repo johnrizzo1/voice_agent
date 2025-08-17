@@ -62,8 +62,7 @@ class ToolExecutor:
         """Load built-in tools from the tools.builtin package."""
         try:
             # Import built-in tool modules
-            from ..tools.builtin import (calculator, file_ops, weather,
-                                         web_search)
+            from ..tools.builtin import calculator, file_ops, weather, web_search
 
             # Register tools
             await self._register_tool_from_module(calculator)
@@ -217,10 +216,15 @@ class ToolExecutor:
         Returns:
             Dictionary containing execution result
         """
+        print(f"🔧 [DEBUG] Executing tool: {tool_name} with parameters: {parameters}")
+
         if not self.is_initialized:
             await self.initialize()
 
         if tool_name not in self.registered_tools:
+            print(
+                f"🚨 [DEBUG] Tool '{tool_name}' not found! Available tools: {list(self.registered_tools.keys())}"
+            )
             return {
                 "success": False,
                 "error": f"Tool '{tool_name}' not found",
@@ -230,6 +234,7 @@ class ToolExecutor:
         tool_info = self.registered_tools[tool_name]
 
         if not tool_info.get("enabled", True):
+            print(f"🚨 [DEBUG] Tool '{tool_name}' is disabled!")
             return {
                 "success": False,
                 "error": f"Tool '{tool_name}' is disabled",
@@ -261,6 +266,7 @@ class ToolExecutor:
                 "result": None,
             }
         except Exception as e:
+            print(f"🚨 [DEBUG] Tool execution error for '{tool_name}': {e}")
             self.logger.error(f"Error executing tool '{tool_name}': {e}")
             return {"success": False, "error": str(e), "result": None}
 
