@@ -4,7 +4,14 @@ audio:
   input_device: null # Auto-detect microphone (or specific device ID)
   output_device: null # Auto-detect speakers (or specific device ID)
   sample_rate: 16000 # Audio sample rate in Hz (16000, 22050, 44100)
-  chunk_size: 1024 # Audio buffer size (512, 1024, 2048)
+  chunk_size: 320 # Audio buffer size - optimized for VAD (320 bytes = 10ms at 16kHz)
+
+  # SoundDevice-specific settings
+  channels: 2 # Number of audio channels (1=mono, 2=stereo)
+  dtype: "int16" # Audio data type: 'int16', 'int32', 'float32'
+  latency: "low" # Latency hint: 'low', 'high' or specific value in seconds
+  buffer_size: 320 # Internal buffer management - matches VAD frame size (10ms)
+  enable_echo_cancellation: true # Enable echo cancellation if supported
 
   # VAD / speech detection tuning (adjusted for reduced sensitivity to brief transients like keyboard clicks)
   vad_aggressiveness: 3 # 0-3 (higher = more aggressive filtering of noise)
@@ -13,7 +20,7 @@ audio:
   speech_detection_cooldown: 2.0 # Seconds after TTS before listening resumes
 
   # Audio processing and sensitivity
-  energy_threshold: 7000 # Minimum RMS amplitude to consider as potential speech (filters keyboard clicks)
+  energy_threshold: 1000 # Minimum RMS amplitude to consider as potential speech (filters keyboard clicks)
   level_meter_scale: 12000.0 # Scale factor for audio level meter display (affects UI meter sensitivity)
 
   # Barge-in / interruption settings
@@ -30,10 +37,12 @@ stt:
   model: "whisper-base"
   language: "auto"
   streaming: true
+  fallback_vosk_model: "vosk-model-en-us-0.22"
+  allow_dummy_fallback: true
 
 tts:
   # Select TTS engine: "bark" | "coqui" | "espeak" | "pyttsx3" | "auto"
-  engine: "bark" # Switched to Bark for testing neural TTS performance/latency
+  engine: "espeak" # Using eSpeak-NG for reliable cross-platform TTS
   voice: "default"
   speed: 1.0
 
@@ -85,7 +94,7 @@ ui:
   show_timestamps: true # Show message timestamps
   color_scheme: default # Future: default | light | high_contrast
   enable_animations: true # Allow ACTIVE blinking / subtle effects
-  enable_audio: false # Future hybrid mode (voice inside TUI)
+  enable_audio: true # Enable voice pipeline integration in TUI
   keymap_overrides: {} # Example: {"f5": "clear_chat"}
 
 # Multi-agent system configuration

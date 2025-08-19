@@ -25,23 +25,23 @@ in
     git
     portaudio
     espeak-ng
-    alsa-utils
+    # alsa-utils
     # Core Python environment with runtime & dev dependencies
     (python312.withPackages (
       ps: with ps; [
         # Runtime
         click
         faster-whisper
-        numpy
+        # numpy  # Installed via pip with version constraint
         ollama
-        pyaudio
+        sounddevice
         psutil
         pydantic
         pyttsx3
         pyyaml
         requests
         rich
-        # textual
+        textual
         torch
         torchaudio
         transformers
@@ -68,10 +68,17 @@ in
   languages.python.venv.enable = true;
   languages.python.venv.quiet = true;
   languages.python.venv.requirements = ''
+    # NumPy version compatibility fix for Whisper/Numba
+    numpy>=1.24.0,<2.3.0
+
     webrtcvad>=2.0.10
-    vosk>=0.3.45
+    # vosk>=0.3.45
+    vosk
     bark>=0.1.5
     textual>=5.3.0
+
+    # Standard Whisper for macOS compatibility fallback
+    openai-whisper>=20231117
 
     # LlamaIndex Core
     llama-index-core>=0.10.0

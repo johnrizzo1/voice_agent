@@ -67,6 +67,8 @@ class STTConfig(BaseModel):
     model: str = "whisper-base"
     language: str = "auto"
     streaming: bool = True
+    fallback_vosk_model: str = "vosk-model-en-us-0.22"
+    allow_dummy_fallback: bool = True
 
 
 class TTSConfig(BaseModel):

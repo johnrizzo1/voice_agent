@@ -2,14 +2,19 @@
 
 from setuptools import setup, find_packages
 
-with open("requirements.txt", "r", encoding="utf-8") as f:
-    requirements = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+try:
+    with open("requirements.txt", "r", encoding="utf-8") as f:
+        requirements = [
+            line.strip() for line in f if line.strip() and not line.startswith("#")
+        ]
+except FileNotFoundError:
+    requirements = []
 
 setup(
     name="voice_agent",
     version="0.1.0",
     description="A fully local realtime voice agent with extensible tooling capabilities",
-    long_description=open("README.md", "r", encoding="utf-8").read() if open("README.md", "r", encoding="utf-8") else "",
+    long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     author="Voice Agent Team",
     author_email="team@voiceagent.dev",

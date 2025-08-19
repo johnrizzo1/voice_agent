@@ -2750,6 +2750,11 @@ class VoiceAgentTUI(App):
                 if audio is None:
                     continue
 
+                # Check if STT service is available
+                if not getattr(va, "stt_service", None):
+                    await asyncio.sleep(0.1)
+                    continue
+
                 t_stt = time.monotonic()
                 text = await va.stt_service.transcribe(audio)  # type: ignore
                 self._record_metric("stt", (time.monotonic() - t_stt) * 1000.0)
@@ -2799,10 +2804,24 @@ class VoiceAgentTUI(App):
                     )
                     self._record_metric("llm", (time.monotonic() - t_llm) * 1000.0)
                     self.chat.add_message(ChatMessage(role="agent", content=response))
-                    if getattr(va, "tts_service", None):
-                        t_tts = time.monotonic()
-                        await va.tts_service.speak(response)  # type: ignore
-                        self._record_metric("tts", (time.monotonic() - t_tts) * 1000.0)
+                    # Only use TTS if service is available and properly initialized
+                    tts_service = getattr(va, "tts_service", None)
+                    if tts_service and hasattr(tts_service, "speak"):
+                        try:
+                            t_tts = time.monotonic()
+                            await va.tts_service.speak(response)  # type: ignore
+                            self._record_metric(
+                                "tts", (time.monotonic() - t_tts) * 1000.0
+                            )
+                        except Exception as tts_err:
+                            # Log TTS error but don't fail the conversation
+                            self.chat.add_message(
+                                ChatMessage(
+                                    role="system",
+                                    content=f"(TTS error: response displayed but not spoken - {tts_err})",
+                                    status="warning",
+                                )
+                            )
                     if hasattr(va, "_update_history"):
                         va._update_history(text, response)  # type: ignore
                 except Exception as convo_err:
@@ -2894,20 +2913,48 @@ class AgentAdapter:
             if not getattr(va, "stt_service", None):
                 from voice_agent.core.stt_service import STTService  # type: ignore
 
-                va.stt_service = STTService(va.config.stt, state_callback=state_cb)  # type: ignore
-                await va.stt_service.initialize()  # type: ignore
-                activated = True
-                if self._pipeline_status:
-                    self._pipeline_status.stt = ComponentState.READY
+                try:
+                    va.stt_service = STTService(va.config.stt, state_callback=state_cb)  # type: ignore
+                    await va.stt_service.initialize()  # type: ignore
+                    activated = True
+                    if self._pipeline_status:
+                        self._pipeline_status.stt = ComponentState.READY
+                except Exception as e:
+                    # Handle STT initialization failure gracefully
+                    if self._pipeline_status:
+                        self._pipeline_status.stt = ComponentState.ERROR
+                        self._pipeline_status.error_message = (
+                            f"STT service failed to initialize: {e}"
+                        )
+                    # Log but don't fail - dummy STT should already be available
+                    import logging
+
+                    logging.warning(
+                        f"STT service initialization failed, continuing with dummy backend: {e}"
+                    )
 
             if not getattr(va, "tts_service", None):
                 from voice_agent.core.tts_service import TTSService  # type: ignore
 
-                va.tts_service = TTSService(va.config.tts, va.audio_manager, state_callback=state_cb)  # type: ignore
-                await va.tts_service.initialize()  # type: ignore
-                activated = True
-                if self._pipeline_status:
-                    self._pipeline_status.tts = ComponentState.READY
+                try:
+                    va.tts_service = TTSService(va.config.tts, va.audio_manager, state_callback=state_cb)  # type: ignore
+                    await va.tts_service.initialize()  # type: ignore
+                    activated = True
+                    if self._pipeline_status:
+                        self._pipeline_status.tts = ComponentState.READY
+                except Exception as e:
+                    # Handle TTS initialization failure gracefully
+                    if self._pipeline_status:
+                        self._pipeline_status.tts = ComponentState.ERROR
+                        self._pipeline_status.error_message = (
+                            f"TTS service failed to initialize: {e}"
+                        )
+                    # Log but don't fail - dummy TTS should be available
+                    import logging
+
+                    logging.warning(
+                        f"TTS service initialization failed, continuing with dummy backend: {e}"
+                    )
 
             ui_cfg = getattr(getattr(va, "config", None), "ui", None)
             if ui_cfg and hasattr(ui_cfg, "enable_audio"):

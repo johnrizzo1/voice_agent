@@ -10,4 +10,4 @@ inputs:
     url: github:nixos/nixpkgs/nixpkgs-unstable
 allowUnfree: true
 nixpkgs:
-  cudaSupport: true
+  cudaSupport: false
