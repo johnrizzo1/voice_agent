@@ -25,6 +25,7 @@ in
     git
     portaudio
     espeak-ng
+    ffmpeg
     # alsa-utils
     # Core Python environment with runtime & dev dependencies
     (python312.withPackages (
@@ -68,8 +69,8 @@ in
   languages.python.venv.enable = true;
   languages.python.venv.quiet = true;
   languages.python.venv.requirements = ''
-    # NumPy version compatibility fix for Whisper/Numba
-    numpy>=1.24.0,<2.3.0
+    # NumPy version compatibility fix for Whisper/Numba and RealtimeTTS
+    numpy>=1.24.0,<2.2.0
 
     webrtcvad>=2.0.10
     # vosk>=0.3.45
@@ -98,6 +99,9 @@ in
 
     # Supporting dependencies for LlamaIndex
     nest-asyncio>=1.5.0
+
+    # RealtimeTTS for streaming TTS
+    realtimetts[coqui,system]>=0.4.0
   '';
 
   # Ensure src is importable without installing the package (editable style).

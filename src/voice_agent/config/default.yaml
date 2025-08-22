@@ -41,9 +41,9 @@ stt:
   allow_dummy_fallback: true
 
 tts:
-  # Select TTS engine: "bark" | "coqui" | "espeak" | "pyttsx3" | "auto"
-  engine: "espeak" # Using eSpeak-NG for reliable cross-platform TTS
-  voice: "default"
+  # Select TTS engine: "pyttsx3" | "bark" | "coqui" | "espeak" | "auto"
+  engine: "pyttsx3" # Using pyttsx3 for macOS native TTS (high quality)
+  voice: "Samantha" # High-quality female voice (fallback to "default" if not available)
   speed: 1.0
 
   # Bark-specific (ignored by other engines):

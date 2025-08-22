@@ -86,7 +86,7 @@ class TTSConfig(BaseModel):
       Leave None to allow Bark's default/random behavior.
     """
 
-    engine: str = "coqui"
+    engine: str = "pyttsx3"
     voice: str = "default"
     speed: float = 1.0
 

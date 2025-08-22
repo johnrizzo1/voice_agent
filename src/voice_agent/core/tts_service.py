@@ -45,12 +45,23 @@ try:
 except ImportError:
     BARK_AVAILABLE = False
 
+try:
+    from RealtimeTTS import TextToAudioStream, SystemEngine, CoquiEngine
+
+    REALTIMETTS_AVAILABLE = True
+except ImportError:
+    TextToAudioStream = None
+    SystemEngine = None
+    CoquiEngine = None
+    REALTIMETTS_AVAILABLE = False
+
 
 class TTSService:
     """
     Text-to-Speech service with multiple backend support.
 
     Supports:
+    - RealtimeTTS (streaming TTS with multiple engines)
     - Bark (Suno's high-quality neural TTS)
     - Coqui TTS (neural voice synthesis)
     - eSpeak-NG (improved synthetic TTS)
@@ -80,6 +91,7 @@ class TTSService:
         self.pyttsx3_engine: Optional[pyttsx3.Engine] = None
         self.coqui_tts: Optional[TTS] = None
         self.bark_models_loaded = False
+        self.realtime_stream: Optional[TextToAudioStream] = None
 
         # Service state
         self.is_initialized = False
@@ -93,8 +105,10 @@ class TTSService:
 
     def _determine_backend(self) -> str:
         """Determine which TTS backend to use based on availability and config."""
-        # Prefer high-quality offline TTS engines in order of quality
-        if BARK_AVAILABLE and self.config.engine in ["bark", "auto"]:
+        # Prefer streaming TTS with RealtimeTTS for best quality and latency
+        if REALTIMETTS_AVAILABLE and self.config.engine in ["realtimetts", "auto"]:
+            return "realtimetts"
+        elif BARK_AVAILABLE and self.config.engine in ["bark", "auto"]:
             return "bark"
         elif COQUI_AVAILABLE and self.config.engine in ["coqui", "auto"]:
             return "coqui"
@@ -102,6 +116,8 @@ class TTSService:
             return "espeak"
         elif pyttsx3:
             return "pyttsx3"
+        elif REALTIMETTS_AVAILABLE:
+            return "realtimetts"
         elif BARK_AVAILABLE:
             return "bark"
         elif COQUI_AVAILABLE:
@@ -143,6 +159,13 @@ class TTSService:
                 self.logger.debug(
                     "pyttsx3 stop() failed during interruption", exc_info=True
                 )
+        elif self.current_backend == "realtimetts" and self.realtime_stream:
+            try:
+                self.realtime_stream.stop()
+            except Exception:
+                self.logger.debug(
+                    "RealtimeTTS stop() failed during interruption", exc_info=True
+                )
 
     async def initialize(self) -> None:
         """Initialize the TTS service and load engines."""
@@ -151,7 +174,9 @@ class TTSService:
         )
         self._emit_state("initializing", f"backend={self.current_backend}")
 
-        if self.current_backend == "bark":
+        if self.current_backend == "realtimetts":
+            await self._initialize_realtimetts()
+        elif self.current_backend == "bark":
             await self._initialize_bark()
         elif self.current_backend == "pyttsx3":
             await self._initialize_pyttsx3()
@@ -166,6 +191,45 @@ class TTSService:
         self.is_initialized = True
         self.logger.info("TTS service initialized")
         self._emit_state("ready", None)
+
+    async def _initialize_realtimetts(self) -> None:
+        """Initialize RealtimeTTS with streaming TTS engines."""
+        try:
+            self.logger.info("Initializing RealtimeTTS with streaming engines...")
+
+            # Initialize in a separate thread to avoid blocking
+            loop = asyncio.get_event_loop()
+
+            def init_stream():
+                """Initialize RealtimeTTS stream with appropriate engine."""
+                # Try to use SystemEngine first (uses OS native TTS like macOS voices)
+                try:
+                    engine = SystemEngine()
+                    self.logger.info("Using RealtimeTTS SystemEngine (native OS TTS)")
+                except Exception as e:
+                    self.logger.debug(f"SystemEngine failed, trying CoquiEngine: {e}")
+                    try:
+                        # Fallback to CoquiEngine if available
+                        engine = CoquiEngine()
+                        self.logger.info("Using RealtimeTTS CoquiEngine")
+                    except Exception as e2:
+                        self.logger.error(
+                            f"Both SystemEngine and CoquiEngine failed: {e2}"
+                        )
+                        raise e2
+
+                # Create the streaming TTS instance
+                return TextToAudioStream(engine)
+
+            self.realtime_stream = await loop.run_in_executor(None, init_stream)
+
+            self.logger.info(
+                "RealtimeTTS initialized successfully with streaming capability"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to initialize RealtimeTTS: {e}")
+            self.realtime_stream = None
+            raise
 
     async def _initialize_pyttsx3(self) -> None:
         """Initialize pyttsx3 engine."""
@@ -316,7 +380,9 @@ class TTSService:
 
         self.logger.info(f"Speaking: {text}")
 
-        if self.current_backend == "bark":
+        if self.current_backend == "realtimetts":
+            await self._speak_realtimetts(text)
+        elif self.current_backend == "bark":
             await self._speak_bark(text)
         elif self.current_backend == "coqui":
             await self._speak_coqui(text)
@@ -331,6 +397,53 @@ class TTSService:
             self._emit_state("error", "no backend")
         # Reset interruption flag after each speak invocation (so next response can play)
         self._interrupt_requested = False
+
+    async def _speak_realtimetts(self, text: str) -> None:
+        """Generate and stream speech using RealtimeTTS for low-latency output."""
+        if not self.realtime_stream:
+            self.logger.error("RealtimeTTS stream not available")
+            return
+
+        try:
+            # Set speaking state to prevent audio feedback
+            if self.audio_manager:
+                self.audio_manager.set_speaking_state(True)
+
+            self.logger.debug("Streaming speech with RealtimeTTS...")
+
+            # Use RealtimeTTS streaming capability
+            loop = asyncio.get_event_loop()
+
+            def stream_audio():
+                """Stream audio using RealtimeTTS in a separate thread."""
+                try:
+                    self.realtime_stream.feed(text)
+                    self.realtime_stream.play()
+                except Exception as e:
+                    self.logger.error(f"RealtimeTTS streaming error: {e}")
+                    raise
+
+            # Run the streaming in executor to avoid blocking
+            await loop.run_in_executor(None, stream_audio)
+
+            self.logger.debug("RealtimeTTS streaming completed")
+
+        except Exception as e:
+            self.logger.error(f"RealtimeTTS synthesis error: {e}")
+        finally:
+            # Minimal cooldown for streaming TTS
+            await asyncio.sleep(self.config.post_tts_cooldown)
+
+            if self.audio_manager:
+                self.audio_manager.clear_input_buffer()
+                if self.config.enable_tts_buffer_double_clear:
+                    await asyncio.sleep(0.12)
+                    self.audio_manager.clear_input_buffer()
+                self.audio_manager.set_speaking_state(False)
+                self.logger.debug(
+                    "Speaking state cleared - audio input re-enabled after RealtimeTTS"
+                )
+            self._interrupt_requested = False
 
     async def _speak_pyttsx3(self, text: str) -> None:
         """
@@ -940,6 +1053,13 @@ class TTSService:
             except Exception as e:
                 self.logger.debug(f"Error stopping pyttsx3 engine: {e}")
             self.pyttsx3_engine = None
+
+        if self.realtime_stream:
+            try:
+                self.realtime_stream.stop()
+            except Exception as e:
+                self.logger.debug(f"Error stopping RealtimeTTS stream: {e}")
+            self.realtime_stream = None
 
         self.is_initialized = False
 
